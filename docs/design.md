@@ -73,7 +73,10 @@ Errors follow ledger-api's convention: `{ "error": { "code", "message" } }`.
 ## Limits and cost
 
 - The AWS side stays within the free tier (Lambda, HTTP API, one SSM standard parameter). **Claude calls are the one thing that costs money**; they are bounded by: rejecting bad tokens before calling Claude, HTTP API stage throttling, request size limits, a cap on tool-use rounds per turn, and a low `max_tokens`.
-- HTTP API's 30-second integration timeout bounds each turn; a turn is typically one or two Claude calls and at most a couple of MCP calls.
+- HTTP API's 30-second integration timeout bounds each turn (the Lambda stops at 28 seconds); a turn is typically one or two Claude calls and at most a couple of MCP calls, and at most 4 Claude calls.
+- Requests: at most 20 messages of at most 2,000 characters each, and the last one must be the customer's. The stage is throttled to 2 requests per second with bursts of 5.
+- If Claude fails after something was recorded, the turn still answers 200 with what was recorded and a "couldn't finish" reply, so the customer hears about it; if nothing was recorded, it answers 503.
+- CORS allows only the UI origins listed in `cdk.json` (`uiOrigins`), with the `authorization` and `content-type` headers.
 
 ## Out of scope for now
 

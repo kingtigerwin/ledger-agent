@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Literal, Protocol, TypedDict
 
-from anthropic import AsyncAnthropic
+from anthropic import APIError, AsyncAnthropic
 from anthropic.types import (
     AssistantMessageParam,
     Message,
@@ -58,8 +58,14 @@ class ChatMessage(TypedDict):
     content: str
 
 
+class ModelUnavailable(Exception):
+    """Claude couldn't be called (after the SDK's own retries)."""
+
+
 class Model(Protocol):
-    async def create(self, **params: Any) -> Message: ...
+    async def create(self, **params: Any) -> Message:
+        """Raises ModelUnavailable when Claude can't be reached or rejects the request."""
+        ...
 
 
 class Claude:
@@ -69,7 +75,10 @@ class Claude:
         self._client = client
 
     async def create(self, **params: Any) -> Message:
-        return await self._client.messages.create(stream=False, **params)
+        try:
+            return await self._client.messages.create(stream=False, **params)
+        except APIError as err:
+            raise ModelUnavailable(type(err).__name__) from err
 
 
 @dataclass
@@ -94,14 +103,21 @@ async def run_turn(
     result = TurnResult(reply="")
 
     for _ in range(max_rounds):
-        response = await model.create(
-            model=MODEL_ID,
-            max_tokens=MAX_TOKENS,
-            system=system,
-            tools=tools,
-            messages=history,
-            output_config={"effort": "low"},
-        )
+        try:
+            response = await model.create(
+                model=MODEL_ID,
+                max_tokens=MAX_TOKENS,
+                system=system,
+                tools=tools,
+                messages=history,
+                output_config={"effort": "low"},
+            )
+        except ModelUnavailable:
+            # Once something is saved, the customer must hear about it, so report it rather than fail the turn.
+            if not result.transactions:
+                raise
+            result.reply = UNFINISHED
+            return result
         if response.stop_reason == "refusal":
             result.reply = DECLINED
             return result

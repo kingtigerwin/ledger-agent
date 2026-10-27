@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from ledger_agent.agent import run_turn
+from ledger_agent.agent import ModelUnavailable, run_turn
 from ledger_agent.ledger import LedgerUnavailable, ToolOutcome, Unauthorized
 
 from .fakes import FakeLedger, FakeModel, message, stored, text, thinking, tool_use
@@ -185,3 +185,22 @@ class TestGivenClaudeRunsOutOfTokens:
         model = FakeModel(message(thinking(), stop_reason="max_tokens"))
         result = await turn(model, FakeLedger())
         assert result.reply.startswith("Sorry")
+
+
+class TestGivenClaudeFailsAfterSomethingWasRecorded:
+    async def test_it_still_returns_what_was_recorded(self) -> None:
+        model = FakeModel(
+            message(tool_use("t1", "create_transaction", COFFEE), stop_reason="tool_use"),
+            ModelUnavailable("overloaded"),
+        )
+        ledger = FakeLedger({"create_transaction": stored(**COFFEE_STORED)})
+        result = await turn(model, ledger)
+        assert result.reply.startswith("Sorry")
+        assert result.transactions == [COFFEE_STORED]
+
+
+class TestGivenClaudeFailsBeforeAnythingWasRecorded:
+    async def test_the_failure_is_raised(self) -> None:
+        model = FakeModel(ModelUnavailable("overloaded"))
+        with pytest.raises(ModelUnavailable):
+            await turn(model, FakeLedger())

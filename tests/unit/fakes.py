@@ -42,9 +42,9 @@ class FakeLedger:
 
 
 class FakeModel:
-    """Answers each create() with the next scripted message and records what was sent."""
+    """Answers each create() with the next scripted message (or raises it) and records what was sent."""
 
-    def __init__(self, *responses: Message):
+    def __init__(self, *responses: Message | Exception):
         self.responses = list(responses)
         self.requests: list[dict[str, Any]] = []
 
@@ -53,7 +53,10 @@ class FakeModel:
         self.requests.append({**params, "messages": list(params["messages"])})
         if not self.responses:
             raise AssertionError("the agent called Claude more times than the test scripted")
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def message(*content: dict[str, Any], stop_reason: str = "end_turn") -> Message:

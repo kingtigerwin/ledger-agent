@@ -1,0 +1,6 @@
+{
+  "app": "uv run python infra/app.py",
+  "context": {
+    "uiOrigins": ["http://localhost:5173"]
+  }
+}
