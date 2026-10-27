@@ -1,7 +1,14 @@
 {
   "app": "uv run python infra/app.py",
   "context": {
-    "uiOrigins": ["http://localhost:5173"],
-    "customDomain": { "domainName": "agent.haoran.cloud", "zoneName": "haoran.cloud", "hostedZoneId": "Z5UXKBB5IU578" }
+    "uiOrigins": [
+      "http://localhost:5173"
+    ],
+    "customDomain": {
+      "domainName": "agent.haoran.cloud",
+      "zoneName": "haoran.cloud",
+      "hostedZoneId": "Z5UXKBB5IU578"
+    },
+    "githubSubjectPrefix": "repo:kingtigerwin@9473411/ledger-agent@1435332744"
   }
 }
