@@ -1,10 +1,11 @@
-"""Smoke test of the deployed agent: one real turn that records a transaction, checked over ledger-api, then deleted.
+"""Smoke test of the deployed agent: a real turn that records a transaction and one that asks about spending, checked
+over ledger-api; the transaction is then deleted.
 
     AGENT_URL=https://agent.haoran.cloud uv run python scripts/smoke.py
 
 Uses one ledger-api user, `agent-e2e`, whose password is the SSM parameter /ledger-agent/e2e-password (made by hand).
 On the first run the user is registered and the ledger-api admin approves it, which needs the admin password from
-SSM; later runs only read the user's own password. Makes one real Claude call (a fraction of a cent).
+SSM; later runs only read the user's own password. Makes two real Claude turns (a fraction of a cent).
 """
 
 import os
@@ -29,6 +30,7 @@ ADMIN_PASSWORD_PARAMETER = "/ledger-api/admin-password"
 TIME_ZONE = "Australia/Sydney"
 # A distinctive amount, so the check can't match some other transaction.
 MESSAGE = "I bought a coffee at Starbucks for $5.37"
+QUESTION = "How much have I spent this month?"
 AMOUNT_CENTS = 537
 
 
@@ -37,10 +39,10 @@ def main() -> None:
     password = secret(PASSWORD_PARAMETER)
     token = sign_in(http, password)
 
-    rejected = chat(http, "not-a-real-token")
+    rejected = chat(http, "not-a-real-token", MESSAGE)
     expect("a rejected token is refused", rejected.status_code == 401, rejected)
 
-    reply = chat(http, token)
+    reply = chat(http, token, MESSAGE)
     expect("the agent answers 200", reply.status_code == 200, reply)
     body: dict[str, Any] = reply.json()
     transactions: list[dict[str, Any]] = body["transactions"]
@@ -57,6 +59,16 @@ def main() -> None:
         stored = http.get(f"{LEDGER_URL}/api/v1/transactions/{recorded['id']}", headers=bearer(token))
         expect("ledger-api has it", stored.status_code == 200, stored)
         print(f"reply: {body['reply']}")
+
+        asked = chat(http, token, QUESTION)
+        expect("the agent answers a question about spending", asked.status_code == 200, asked)
+        summaries: list[dict[str, Any]] = asked.json()["summaries"]
+        expect(
+            "it returns this month's summary, including the coffee",
+            any(s["month"] == today[:7] and s["totalCents"] >= AMOUNT_CENTS for s in summaries),
+            asked,
+        )
+        print(f"reply: {asked.json()['reply']}")
     finally:
         for transaction in transactions:
             deleted = http.delete(f"{LEDGER_URL}/api/v1/transactions/{transaction['id']}", headers=bearer(token))
@@ -90,11 +102,11 @@ def login(http: httpx2.Client, username: str, password: str) -> httpx2.Response:
     )
 
 
-def chat(http: httpx2.Client, token: str) -> httpx2.Response:
+def chat(http: httpx2.Client, token: str, content: str) -> httpx2.Response:
     return http.post(
         f"{AGENT_URL}/agent/v1/chat",
         headers=bearer(token),
-        json={"messages": [{"role": "user", "content": MESSAGE}], "timeZone": TIME_ZONE},
+        json={"messages": [{"role": "user", "content": content}], "timeZone": TIME_ZONE},
     )
 
 

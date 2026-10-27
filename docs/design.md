@@ -25,7 +25,9 @@ An agent that turns a customer's free text ("I went to starbucks and bought coff
 
 `get_transaction`, `update_transaction` and `delete_transaction` are filtered out, so Claude can't change or delete existing transactions. The customer fixes a wrong record in the UI over REST.
 
-The loop stops when Claude ends its turn or after a fixed number of tool rounds. The response carries Claude's reply and every transaction `create_transaction` returned during the turn, so the UI can show them and refresh its list.
+The loop stops when Claude ends its turn or after a fixed number of tool rounds. The response carries Claude's reply and, as data, everything the tools returned during the turn: the transactions `create_transaction` recorded (so the UI can show them and refresh its list), the transactions `list_transactions` returned, each once even across pages, and every `get_monthly_summary` result. Because the UI shows the lookups as a table, Claude keeps its reply to a sentence or two instead of writing the list out, which also keeps long months inside its output limit.
+
+Chat is for what the customer types: recording and questions about their own spending ("how much have I spent this month?", "show all my expenses this month"). The app's own screens (the transaction table, edit and delete, admin pages) call ledger-api directly: they need exact data and no Claude call. Questions across customers aren't possible through the agent, since ledger-api exposes no admin tools over MCP.
 
 `create_transaction` isn't idempotent (ledger-api makes the id), so:
 
@@ -54,9 +56,13 @@ All under `/agent/v1`, all requiring the bearer token.
       "id": "01JBX...", "date": "2026-10-27", "merchant": "Starbucks", "category": "dining", "item": "coffee",
       "amountCents": 500, "currency": "AUD", "createdAt": "...", "updatedAt": "...", "version": 1
     }
-  ]
+  ],
+  "listed": [],
+  "summaries": []
 }
 ```
+
+For "how much have I spent this month?", `transactions` and `listed` are empty and `summaries` holds ledger-api's summary: `[{ "month": "2026-10", "currency": "AUD", "totalCents": 12290, "byCategory": [{ "category": "groceries", "totalCents": 8240 }, ...] }]`. For "show all my expenses this month", `listed` holds the month's transactions, newest first, in the same shape as `transactions`.
 
 - No server-side conversation state: the UI sends the whole history (user and assistant text only) every turn and appends the reply. Limits on message count and length keep requests, and Claude spend, bounded.
 - `timeZone` is an IANA name; the agent puts today's date in that zone into the prompt so "today" and "yesterday" resolve to real dates.

@@ -72,7 +72,12 @@ class TestGivenAMessageDescribingAnExpense:
     async def test_it_answers_200_with_the_reply_and_the_recorded_transactions(self, response: Any) -> None:
         _, status, body = response
         assert status == 200
-        assert body == {"reply": "Recorded $5.00 at Starbucks.", "transactions": [COFFEE_STORED]}
+        assert body == {
+            "reply": "Recorded $5.00 at Starbucks.",
+            "transactions": [COFFEE_STORED],
+            "listed": [],
+            "summaries": [],
+        }
 
     async def test_it_talks_to_the_ledger_with_the_customers_token(self, response: Any) -> None:
         harness, _, _ = response
@@ -81,6 +86,34 @@ class TestGivenAMessageDescribingAnExpense:
     async def test_today_is_the_date_in_the_customers_time_zone(self, response: Any) -> None:
         harness, _, _ = response
         assert "2026-10-28" in harness.model.requests[0]["system"]
+
+
+class TestGivenAQuestionAboutPastSpending:
+    async def test_what_the_lookups_returned_comes_back_as_data(self) -> None:
+        summary: dict[str, Any] = {"month": "2026-10", "currency": "AUD", "totalCents": 500, "byCategory": []}
+        harness = Harness(
+            FakeModel(
+                message(
+                    tool_use("t1", "list_transactions", {"from": "2026-10-01", "to": "2026-10-31"}),
+                    tool_use("t2", "get_monthly_summary", {"month": "2026-10"}),
+                    stop_reason="tool_use",
+                ),
+                message(text("One expense this month: $5.00.")),
+            ),
+            FakeLedger(
+                {
+                    "list_transactions": stored(items=[COFFEE_STORED], nextCursor=None),
+                    "get_monthly_summary": stored(**summary),
+                }
+            ),
+        )
+        status, body = await harness.post(
+            {"messages": [{"role": "user", "content": "show my spending this month"}], "timeZone": "Australia/Sydney"}
+        )
+        assert status == 200
+        assert body["transactions"] == []
+        assert body["listed"] == [COFFEE_STORED]
+        assert body["summaries"] == [summary]
 
 
 class TestGivenNoBearerToken:
