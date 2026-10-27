@@ -12,22 +12,35 @@ from aws_cdk import App, Environment
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk.assertions import Match, Template
 
-from infra.ledger_agent_stack import LedgerAgentStack
+from infra.ledger_agent_stack import CustomDomain, LedgerAgentStack
 
 UI_ORIGINS = ["http://localhost:5173", "https://app.example.com"]
 
 
-@pytest.fixture(scope="module")
-def template() -> Template:
+DOMAIN = CustomDomain(domain_name="agent.haoran.cloud", zone_name="haoran.cloud", hosted_zone_id="Z5UXKBB5IU578")
+
+
+def synth(custom_domain: CustomDomain | None) -> Template:
     app = App()
     stack = LedgerAgentStack(
         app,
         "LedgerAgent",
         code=lambda_.Code.from_inline("def handler(event, context): pass"),
         ui_origins=UI_ORIGINS,
+        custom_domain=custom_domain,
         env=Environment(account="123456789012", region="ap-southeast-2"),
     )
     return Template.from_stack(stack)
+
+
+@pytest.fixture(scope="module")
+def template() -> Template:
+    return synth(None)
+
+
+@pytest.fixture(scope="module")
+def with_domain() -> Template:
+    return synth(DOMAIN)
 
 
 def resources(template: Template, type_: str) -> Mapping[str, Mapping[str, Any]]:
@@ -83,3 +96,40 @@ class TestTheHttpApi:
         settings = stage["Properties"]["DefaultRouteSettings"]
         assert settings["ThrottlingRateLimit"] <= 5
         assert settings["ThrottlingBurstLimit"] <= 10
+
+
+class TestWithoutACustomDomain:
+    def test_there_is_no_certificate_domain_or_dns_record(self, template: Template) -> None:
+        for type_ in (
+            "AWS::CertificateManager::Certificate",
+            "AWS::ApiGatewayV2::DomainName",
+            "AWS::Route53::RecordSet",
+        ):
+            template.resource_count_is(type_, 0)
+
+
+class TestWithACustomDomain:
+    def test_a_free_dns_validated_certificate_is_issued_in_the_existing_zone(self, with_domain: Template) -> None:
+        with_domain.has_resource_properties(
+            "AWS::CertificateManager::Certificate",
+            {
+                "DomainName": "agent.haoran.cloud",
+                "ValidationMethod": "DNS",
+                "DomainValidationOptions": [{"DomainName": "agent.haoran.cloud", "HostedZoneId": "Z5UXKBB5IU578"}],
+            },
+        )
+
+    def test_the_api_is_mapped_to_the_domain(self, with_domain: Template) -> None:
+        with_domain.has_resource_properties("AWS::ApiGatewayV2::DomainName", {"DomainName": "agent.haoran.cloud"})
+        with_domain.resource_count_is("AWS::ApiGatewayV2::ApiMapping", 1)
+
+    def test_only_alias_records_for_the_agents_name_are_added_and_the_zone_is_not_created(
+        self, with_domain: Template
+    ) -> None:
+        with_domain.resource_count_is("AWS::Route53::HostedZone", 0)
+        records = resources(with_domain, "AWS::Route53::RecordSet").values()
+        assert sorted(r["Properties"]["Type"] for r in records) == ["A", "AAAA"]
+        for record in records:
+            assert record["Properties"]["Name"] == "agent.haoran.cloud."
+            assert record["Properties"]["HostedZoneId"] == "Z5UXKBB5IU578"
+            assert "AliasTarget" in record["Properties"]

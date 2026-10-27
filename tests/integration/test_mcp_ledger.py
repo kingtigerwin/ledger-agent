@@ -62,8 +62,14 @@ async def served(token: str = GOOD_TOKEN, *, status_for_good_token: int | None =
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
     transport = httpx2.ASGITransport(app=behind_authorizer(app, status_for_good_token=status_for_good_token))
-    async with app.router.lifespan_context(app), connect(URL, token, transport=transport) as ledger:
-        yield ledger
+    try:
+        async with app.router.lifespan_context(app), connect(URL, token, transport=transport) as ledger:
+            yield ledger
+    except BaseExceptionGroup as group:
+        # The fake server's lifespan wraps what leaves it in one more group; production has no such layer. Strip
+        # exactly one, so a group connect() failed to unwrap still reaches the test.
+        [error] = group.exceptions
+        raise error from None
 
 
 class TestGivenTheCustomersToken:
@@ -106,3 +112,21 @@ class TestGivenTheServerFails:
         async with served(status_for_good_token=502) as ledger:
             with pytest.raises(LedgerUnavailable):
                 await ledger.list_tools()
+
+
+class TestGivenAnErrorLeavesTheSession:
+    """The handler catches errors outside `async with connect(...)`, where the SDK's task group would wrap them."""
+
+    async def test_unauthorized_comes_out_as_itself(self) -> None:
+        with pytest.raises(Unauthorized):
+            async with served("expired") as ledger:
+                await ledger.list_tools()
+
+    async def test_the_callers_own_errors_come_out_as_themselves(self) -> None:
+        class ModelDown(Exception):
+            pass
+
+        with pytest.raises(ModelDown):
+            async with served() as ledger:
+                await ledger.list_tools()
+                raise ModelDown

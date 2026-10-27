@@ -5,6 +5,7 @@ An agent that turns a customer's free text ("I went to starbucks and bought coff
 ## Stack
 
 - Python 3.13 on Lambda (arm64), API Gateway HTTP API in front, deployed with AWS CDK (Python) as one stack, `LedgerAgent`, in `ap-southeast-2` (same region and account as ledger-api).
+- Custom domain `https://agent.haoran.cloud` (configured in `cdk.json`): a free regional ACM certificate (an HTTP API takes one from its own region, so no `us-east-1` stack as ledger-api's CloudFront needs) and `A`/`AAAA` alias records in the existing `haoran.cloud` zone, which is imported by ID and otherwise left alone. Alias queries to API Gateway are free. The `execute-api` URL keeps working.
 - Claude via the Anthropic Python SDK, model `claude-haiku-5-5` (chosen for cost), `output_config.effort: "low"`, low `max_tokens`. The model is one config value.
 - The Anthropic API key is the SSM `SecureString` `/ledger-agent/anthropic-api-key`, created by hand (never by CDK, never in source). The Lambda reads it once per cold start.
 - ledger-api's MCP endpoint, `POST https://api.haoran.cloud/api/mcp` (stateless Streamable HTTP, JSON responses), called with the Python `mcp` SDK's client.

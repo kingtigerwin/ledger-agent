@@ -58,10 +58,28 @@ async def connect(
         event_hooks={"response": [note_status]},
         transport=transport,
     )
-    # ledger-api is stateless, so there's no session to end with a DELETE.
-    async with (
-        client,
-        streamable_http_client(url, http_client=client, terminate_on_close=False) as (read, write),
-        ClientSession(read, write) as session,
-    ):
-        yield McpLedger(session, statuses)
+    try:
+        # ledger-api is stateless, so there's no session to end with a DELETE.
+        async with (
+            client,
+            streamable_http_client(url, http_client=client, terminate_on_close=False) as (read, write),
+            ClientSession(read, write) as session,
+        ):
+            yield McpLedger(session, statuses)
+    except BaseExceptionGroup as group:
+        # The transport's task group wraps whatever leaves the session, including the caller's own errors;
+        # callers catch Unauthorized, ModelUnavailable and the rest by type, so hand back the one that was raised.
+        raise _sole_error(group) from None
+
+
+def _sole_error(group: BaseExceptionGroup[BaseException]) -> BaseException:
+    """The one error inside (possibly nested) single-error groups; a group of several stays as it is."""
+    error: BaseException = group
+    while len(members := _members(error)) == 1:
+        error = members[0]
+    return error
+
+
+def _members(error: BaseException) -> tuple[BaseException, ...]:
+    # Checked on the type, not with isinstance: pyright can't infer the members of a group narrowed from BaseException.
+    return getattr(error, "exceptions", ()) if issubclass(type(error), BaseExceptionGroup) else ()
