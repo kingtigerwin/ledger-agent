@@ -13,9 +13,19 @@ uv run pytest tests/unit/test_clock.py    # one file
 uv run pytest -k "sydney"                 # tests matching a name
 uv run ruff check && uv run ruff format --check
 uv run pyright                            # strict mode
+
+# One real turn: real Claude (costs money) and the deployed ledger-api; reads the API key from SSM with your AWS creds.
+LEDGER_ACCESS_TOKEN=... uv run python -m ledger_agent "I went to starbucks and bought coffee spending 5 dollars"
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same four checks on pull requests and pushes to `main`.
+CI (`.github/workflows/ci.yml`) runs the same four checks on pull requests and pushes to `main`. No test calls Claude or the network.
+
+## Architecture
+
+- `agent.py`: `run_turn` is the whole agent: token check via `tools/list`, the Claude tool-use loop, tool filtering, and collecting created transactions. It depends only on two protocols, `Model` (real one: `Claude`, wrapping `AsyncAnthropic`) and `Ledger` (`ledger.py`), so `tests/unit/` drives it with the fakes in `tests/unit/fakes.py`.
+- `mcp_ledger.py`: the real `Ledger`, one MCP session per turn (`connect(url, token)`). The MCP SDK reports every HTTP error the same way, so an httpx2 response hook records status codes and `_guard` maps 401/403 to `Unauthorized` and everything else to `LedgerUnavailable`.
+- `tests/integration/` runs `McpLedger` against the MCP SDK's own server in process (`httpx2.ASGITransport`), behind a fake authorizer. Open the server per test with `served()`, not a pytest fixture: its lifespan must exit in the task that entered it.
+- The Anthropic SDK is 2.x: `MessageParam` is a union, so build `UserMessageParam` / `AssistantMessageParam`; it uses `httpx2`, not `httpx`. `mypy_boto3_ssm` is a dev-only stub package, so import it under `TYPE_CHECKING` only.
 
 ## What this is
 

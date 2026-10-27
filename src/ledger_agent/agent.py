@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Literal, Protocol, TypedDict
 
+from anthropic import AsyncAnthropic
 from anthropic.types import (
     AssistantMessageParam,
     Message,
@@ -59,6 +60,16 @@ class ChatMessage(TypedDict):
 
 class Model(Protocol):
     async def create(self, **params: Any) -> Message: ...
+
+
+class Claude:
+    """The real Model: non-streaming Messages API calls through the Anthropic SDK."""
+
+    def __init__(self, client: AsyncAnthropic):
+        self._client = client
+
+    async def create(self, **params: Any) -> Message:
+        return await self._client.messages.create(stream=False, **params)
 
 
 @dataclass
