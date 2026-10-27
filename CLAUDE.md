@@ -13,9 +13,29 @@ uv run pytest tests/unit/test_clock.py    # one file
 uv run pytest -k "sydney"                 # tests matching a name
 uv run ruff check && uv run ruff format --check
 uv run pyright                            # strict mode
+
+# One real turn: real Claude (costs money) and the deployed ledger-api; reads the API key from SSM with your AWS creds.
+LEDGER_ACCESS_TOKEN=... uv run python -m ledger_agent "I went to starbucks and bought coffee spending 5 dollars"
+
+# CDK (same CLI version as ledger-api); synth builds the Lambda package into build/lambda first.
+export JSII_SILENCE_WARNING_UNTESTED_NODE_VERSION=1   # jsii warns about the local Node 26
+npx aws-cdk@2.1146.1 synth
+npx aws-cdk@2.1146.1 deploy LedgerAgent
+
+# Smoke test of the deployed agent: one real turn as ledger-api user agent-e2e, checked and then deleted.
+uv run python scripts/smoke.py
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same four checks on pull requests and pushes to `main`.
+CI (`.github/workflows/ci.yml`) runs the same four checks on pull requests and pushes to `main`; on `main`, once the one-time setup in README.md is done, a `deploy` job assumes `ledger-agent-github-deploy` via GitHub OIDC, deploys `LedgerAgent` and runs the smoke test. No test calls Claude or the network; `tests/infra/` synthesizes the stack with inline placeholder code, so it never builds the package.
+
+## Architecture
+
+- `agent.py`: `run_turn` is the whole agent: token check via `tools/list`, the Claude tool-use loop, tool filtering, and collecting created transactions. It depends only on two protocols, `Model` (real one: `Claude`, wrapping `AsyncAnthropic`) and `Ledger` (`ledger.py`), so `tests/unit/` drives it with the fakes in `tests/unit/fakes.py`.
+- `mcp_ledger.py`: the real `Ledger`, one MCP session per turn (`connect(url, token)`). The MCP SDK reports every HTTP error the same way, so an httpx2 response hook records status codes and `_guard` maps 401/403 to `Unauthorized` and everything else to `LedgerUnavailable`. Anything leaving the session (including the caller's own errors, like `ModelUnavailable`) is wrapped in an `ExceptionGroup` by the transport's task group; `connect` unwraps it so callers can catch by type. Test error paths by catching *outside* `async with`, as the handler does.
+- `handler.py`: `create_handler(Deps)` turns an HTTP API payload-v2 event into a turn (bearer token, pydantic request validation, size limits) and maps failures to `{ error: { code, message } }`: 401 `unauthorized`, 400 `invalid_json` / `validation_failed` / `invalid_time_zone`, 502 `ledger_unavailable`, 503 `model_unavailable`, 500 `internal_error`. `lambda_function.py` is the thin Lambda entry that wires real dependencies once per cold start; it keeps one event loop for the container because the Anthropic client's connection pool is bound to the loop that created it.
+- `infra/`: CDK app (`app.py`) with two stacks. `LedgerAgentCiAccess` (`ci_access_stack.py`) is deployed by hand once: the GitHub deploy role, trusting only this repo's `main` via the account's existing OIDC provider (owned by ledger-api's `LedgerApiCiAccess`, referenced by ARN), allowed only to assume CDK's bootstrap roles and read `/ledger-agent/e2e-password`. The `LedgerAgent` stack (`ledger_agent_stack.py`: Lambda, HTTP API with CORS from the `uiOrigins` context in `cdk.json`, stage throttling, read access to the SSM key only, and the optional `customDomain` from `cdk.json`: a regional ACM certificate and `A`/`AAAA` aliases in the existing `haoran.cloud` zone, imported by ID and never otherwise modified), and `package.py`, which builds the Lambda folder with `uv export` + `uv pip install --python-platform aarch64-manylinux2014` (no Docker), leaving out boto3/botocore since the runtime provides them.
+- `tests/integration/` runs `McpLedger` against the MCP SDK's own server in process (`httpx2.ASGITransport`), behind a fake authorizer. Open the server per test with `served()`, not a pytest fixture: its lifespan must exit in the task that entered it.
+- The Anthropic SDK is 2.x: `MessageParam` is a union, so build `UserMessageParam` / `AssistantMessageParam`; it uses `httpx2`, not `httpx`. `mypy_boto3_ssm` is a dev-only stub package, so import it under `TYPE_CHECKING` only.
 
 ## What this is
 

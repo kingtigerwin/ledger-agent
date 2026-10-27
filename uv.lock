@@ -127,6 +127,24 @@ wheels = [
 ]
 
 [[package]]
+name = "boto3-stubs"
+version = "1.43.119"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore-stubs" },
+    { name = "types-s3transfer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c8/89/460a01ee879d0eaf34f4e1b9a8d7f1da17ec972bd738122bbd616d3ea947/boto3_stubs-1.43.119.tar.gz", hash = "sha256:5734e5c36496d6a41c9ffa247fae83ece5e14b1da33222861482974f5f67e48f", size = 105535, upload-time = "2026-10-26T21:50:20.435Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6d/0e/df9807a63ad9a37ec5921f8950a6fd46ecc3c556b6e91efb4a53b7009b84/boto3_stubs-1.43.119-py3-none-any.whl", hash = "sha256:12d6a2cff9439798ac20e7b069cca92a79334898727d6ed1c3100ef44ce63cb4", size = 72013, upload-time = "2026-10-26T21:50:16.162Z" },
+]
+
+[package.optional-dependencies]
+ssm = [
+    { name = "mypy-boto3-ssm" },
+]
+
+[[package]]
 name = "botocore"
 version = "1.43.119"
 source = { registry = "https://pypi.org/simple" }
@@ -138,6 +156,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a8/ab/8e6d1d97c086c127f725cdeffae3b44d92ca3ca40741fb90f245f11887d5/botocore-1.43.119.tar.gz", hash = "sha256:ed11934be6e6d398ac21b7fe03778c9584368eeff8ba5371581f19bb47db0b6a", size = 16457548, upload-time = "2026-10-26T19:25:52.703Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/54/04e5950c7f2d22d78f22db00ca119b257b7cd2024328b6116ebaeb9c14eb/botocore-1.43.119-py3-none-any.whl", hash = "sha256:6026aec97914a4fa116915fd3b05af899912eff51b93fb8dff95aa228a3e761b", size = 16154402, upload-time = "2026-10-26T19:25:48.301Z" },
+]
+
+[[package]]
+name = "botocore-stubs"
+version = "1.43.119"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/90/ef/96cde812b9cb005849a34ce4c1ff5410b76d28ab3ccd896e6ec12fe8b606/botocore_stubs-1.43.119.tar.gz", hash = "sha256:6fa626afaf9a017ca023c38f9e1a03a9ea17d1d00367f09927f1a7b4b55e811c", size = 42957, upload-time = "2026-10-26T23:41:56.154Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c5/be/03f83efdafe720fe73d6d67339243aff7565f5bc53d24e0393b6859b24ca/botocore_stubs-1.43.119-py3-none-any.whl", hash = "sha256:b627edbb9ee698382b9175f4b8304b2c8ad7b34d61d8003e7b8f73ef987c5a5c", size = 67247, upload-time = "2026-10-26T23:41:54.644Z" },
 ]
 
 [[package]]
@@ -533,11 +560,13 @@ dependencies = [
     { name = "anthropic" },
     { name = "boto3" },
     { name = "mcp" },
+    { name = "pydantic" },
     { name = "tzdata" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "boto3-stubs", extra = ["ssm"] },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -553,11 +582,13 @@ requires-dist = [
     { name = "anthropic", specifier = ">=2.3.0" },
     { name = "boto3", specifier = ">=1.43.119" },
     { name = "mcp", specifier = ">=2.3.0" },
+    { name = "pydantic", specifier = ">=2.14.1" },
     { name = "tzdata", specifier = ">=2026.5" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "boto3-stubs", extras = ["ssm"], specifier = ">=1.43.119" },
     { name = "pyright", specifier = ">=1.1.414" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.1" },
@@ -604,6 +635,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9e/2d/7c251e34207f6c51000312fc8839111ac45cfe02023f90b44e7f1051dd8e/mcp_types-2.3.0.tar.gz", hash = "sha256:d1e46549edb35ee19a94940fcee6d1addd7e589ab7ea92dda83f5d84781fc362", size = 65898, upload-time = "2026-10-02T22:06:57.863Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ce/48/32583066b155bb5d4507e7887dc88ee23118cc4de8e2a12870c49719e2a8/mcp_types-2.3.0-py3-none-any.whl", hash = "sha256:968efdbdaedfab06adae40d378a34395f1090c5921d4be3c9cde283aaf76d91d", size = 69108, upload-time = "2026-10-02T22:06:54.099Z" },
+]
+
+[[package]]
+name = "mypy-boto3-ssm"
+version = "1.43.104"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c8/b4/007e9acec1ccc7b0f9148f3ef2f6fe27ef183c5c7ab08b6b5a7d465d13d5/mypy_boto3_ssm-1.43.104.tar.gz", hash = "sha256:1b1e18762e6b9ceaf735e8165a6dbd789b10d94f56f704ef010d0c8bbef059cc", size = 98088, upload-time = "2026-09-28T20:24:22.046Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8e/9a/c7d22d1b1450c6b790cad4fcb2e98defd383527d381b4084cd7ee6b2deaa/mypy_boto3_ssm-1.43.104-py3-none-any.whl", hash = "sha256:4434c02de5101a0bc2fbd9bdedbcc98f5836dc432fce38ebfc8c88adb63dbb90", size = 99719, upload-time = "2026-09-28T20:24:19.363Z" },
 ]
 
 [[package]]
@@ -1056,6 +1096,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/3a/38/c61bfcf62a7b572b5e9363a802ff92559cb427ee963048e1442e3aef7490/typeguard-2.13.3.tar.gz", hash = "sha256:00edaa8da3a133674796cf5ea87d9f4b4c367d77476e185e80251cc13dfbb8c4", size = 40604, upload-time = "2021-12-10T21:09:39.158Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9a/bb/d43e5c75054e53efce310e79d63df0ac3f25e34c926be5dffb7d283fb2a8/typeguard-2.13.3-py3-none-any.whl", hash = "sha256:5e3e3be01e887e7eafae5af63d1f36c849aaa94e3a0112097312aabfa16284f1", size = 17605, upload-time = "2021-12-10T21:09:37.844Z" },
+]
+
+[[package]]
+name = "types-s3transfer"
+version = "0.19.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/89/b2/4f2d72b5d234c81caa07dee688cacee2c8dc5bd793e9ae70a573f00d6425/types_s3transfer-0.19.3.tar.gz", hash = "sha256:99422ef028a5f854cd92d1e72cf4208bd0569f68a87936ca02fb9f91a68cdcd3", size = 13780, upload-time = "2026-10-20T02:24:19.016Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/98/972fa03c9a6e1cc9184a28ea0354af50a6764bb172fe2d0751798a295f07/types_s3transfer-0.19.3-py3-none-any.whl", hash = "sha256:6843143f3b79e3cb73e58b6f45738e28e88d9f681fd32cc5ef7fa16f0c193356", size = 19476, upload-time = "2026-10-20T02:24:17.682Z" },
 ]
 
 [[package]]

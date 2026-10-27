@@ -11,8 +11,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      # tests/infra synthesizes the stacks, and CDK's jsii runs on Node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - run: uv sync --locked
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run pyright
       - run: uv run pytest
+
+  # Deploys main after the tests pass. Needs, in the repo's settings:
+  #   secret   AWS_DEPLOY_ROLE_ARN  (output of the LedgerAgentCiAccess stack; a secret so the
+  #                                  account ID in it never appears in this public repo's logs)
+  #   variable DEPLOY_ENABLED       ("true" once the secret is set; job-level `if` can't read secrets)
+  deploy:
+    # Skipped until the one-time setup in README.md is done.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    needs: test
+    runs-on: ubuntu-latest
+    # One deploy at a time; a newer push waits for the running one instead of racing it.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    permissions:
+      id-token: write # lets the job get a GitHub OIDC token to assume the AWS role
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: uv sync --locked
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-southeast-2
+          # Also hides the account ID wherever later steps print it (e.g. ARNs in cdk output).
+          mask-aws-account-id: true
+      - name: Deploy
+        run: npx --yes aws-cdk@2.1146.1 deploy LedgerAgent --require-approval never --outputs-file cdk-outputs.json
+      # One real Claude call per deploy (a fraction of a cent); records a transaction and deletes it.
+      - name: Smoke test
+        run: AGENT_URL="$(jq -r .LedgerAgent.CustomDomainUrl cdk-outputs.json)" uv run python scripts/smoke.py

@@ -5,6 +5,7 @@ An agent that turns a customer's free text ("I went to starbucks and bought coff
 ## Stack
 
 - Python 3.13 on Lambda (arm64), API Gateway HTTP API in front, deployed with AWS CDK (Python) as one stack, `LedgerAgent`, in `ap-southeast-2` (same region and account as ledger-api).
+- Custom domain `https://agent.haoran.cloud` (configured in `cdk.json`): a free regional ACM certificate (an HTTP API takes one from its own region, so no `us-east-1` stack as ledger-api's CloudFront needs) and `A`/`AAAA` alias records in the existing `haoran.cloud` zone, which is imported by ID and otherwise left alone. Alias queries to API Gateway are free. The `execute-api` URL keeps working.
 - Claude via the Anthropic Python SDK, model `claude-haiku-5-5` (chosen for cost), `output_config.effort: "low"`, low `max_tokens`. The model is one config value.
 - The Anthropic API key is the SSM `SecureString` `/ledger-agent/anthropic-api-key`, created by hand (never by CDK, never in source). The Lambda reads it once per cold start.
 - ledger-api's MCP endpoint, `POST https://api.haoran.cloud/api/mcp` (stateless Streamable HTTP, JSON responses), called with the Python `mcp` SDK's client.
@@ -73,7 +74,10 @@ Errors follow ledger-api's convention: `{ "error": { "code", "message" } }`.
 ## Limits and cost
 
 - The AWS side stays within the free tier (Lambda, HTTP API, one SSM standard parameter). **Claude calls are the one thing that costs money**; they are bounded by: rejecting bad tokens before calling Claude, HTTP API stage throttling, request size limits, a cap on tool-use rounds per turn, and a low `max_tokens`.
-- HTTP API's 30-second integration timeout bounds each turn; a turn is typically one or two Claude calls and at most a couple of MCP calls.
+- HTTP API's 30-second integration timeout bounds each turn (the Lambda stops at 28 seconds); a turn is typically one or two Claude calls and at most a couple of MCP calls, and at most 4 Claude calls.
+- Requests: at most 20 messages of at most 2,000 characters each, and the last one must be the customer's. The stage is throttled to 2 requests per second with bursts of 5.
+- If Claude fails after something was recorded, the turn still answers 200 with what was recorded and a "couldn't finish" reply, so the customer hears about it; if nothing was recorded, it answers 503.
+- CORS allows only the UI origins listed in `cdk.json` (`uiOrigins`), with the `authorization` and `content-type` headers.
 
 ## Out of scope for now
 
