@@ -83,8 +83,23 @@ def create_handler(deps: Deps) -> Callable[[Event], Awaitable[Response]]:
         except Exception:
             log.exception("turn_failed")
             return _error(500, "internal_error", "Something went wrong; try again.")
-        log.info("turn_finished", extra={"transactions": len(result.transactions)})
-        return _json(200, {"reply": result.reply, "transactions": result.transactions})
+        log.info(
+            "turn_finished",
+            extra={
+                "transactions": len(result.transactions),
+                "listed": len(result.listed),
+                "summaries": len(result.summaries),
+            },
+        )
+        return _json(
+            200,
+            {
+                "reply": result.reply,
+                "transactions": result.transactions,
+                "listed": result.listed,
+                "summaries": result.summaries,
+            },
+        )
 
     return handle
 

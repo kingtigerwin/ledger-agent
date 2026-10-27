@@ -27,6 +27,8 @@ MAX_ROUNDS = 4
 # The only ledger-api tools Claude sees, in a fixed order. Changing or deleting transactions happens in the UI.
 OFFERED_TOOLS = ("create_transaction", "list_transactions", "get_monthly_summary")
 CREATE = "create_transaction"
+LIST = "list_transactions"
+SUMMARY = "get_monthly_summary"
 
 DECLINED = "Sorry, I can't help with that."
 UNFINISHED = "Sorry, I couldn't finish that. Please check your transactions before trying again."
@@ -47,8 +49,10 @@ names another currency, say only AUD is supported instead of converting.
 - Pick the closest category, or other. Write merchant names in their usual form ("Starbucks", "Woolworths").
 - If a tool call fails, don't repeat it; tell the customer what happened.
 
-For questions about past spending, use list_transactions or get_monthly_summary. You can't edit or delete \
-transactions; the customer does that in the app.
+For questions about past spending, use list_transactions or get_monthly_summary. The app shows the customer every \
+transaction and summary these return, as a table, so don't list them in your reply: answer in one or two sentences \
+(how many, the total, anything notable). To list a whole period, pass from and to with limit 100, and follow \
+nextCursor until it's null. You can't edit or delete transactions; the customer does that in the app.
 
 Today is {weekday} {today} in the customer's time zone."""
 
@@ -84,7 +88,12 @@ class Claude:
 @dataclass
 class TurnResult:
     reply: str
+    # What create_transaction recorded this turn.
     transactions: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
+    # What the lookups returned, for the UI to show as data: list_transactions items (each once) and
+    # get_monthly_summary results.
+    listed: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
+    summaries: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
 
 
 async def run_turn(
@@ -154,16 +163,28 @@ def _offered(specs: list[ToolSpec]) -> list[ToolParam]:
 
 
 async def _call(ledger: Ledger, block: ToolUseBlock, offered: set[str], result: TurnResult) -> ToolResultBlockParam:
-    """Runs one tool call exactly once (create_transaction isn't idempotent) and records what it created."""
+    """Runs one tool call exactly once (create_transaction isn't idempotent) and keeps what it returned."""
     if block.name not in offered:
         return _tool_result(block, f"{block.name} isn't available to you.", is_error=True)
     try:
         outcome = await ledger.call_tool(block.name, dict(block.input))
     except LedgerUnavailable:
         return _tool_result(block, UNREACHABLE, is_error=True)
-    if block.name == CREATE and not outcome.is_error:
-        result.transactions.append(json.loads(outcome.text))
+    if not outcome.is_error:
+        _keep(block.name, json.loads(outcome.text), result)
     return _tool_result(block, outcome.text, is_error=outcome.is_error)
+
+
+def _keep(tool: str, payload: dict[str, Any], result: TurnResult) -> None:
+    if tool == CREATE:
+        result.transactions.append(payload)
+    elif tool == SUMMARY:
+        result.summaries.append(payload)
+    elif tool == LIST:
+        # Claude may list overlapping ranges or re-read a page; the UI should see each transaction once.
+        seen = {t["id"] for t in result.listed}
+        items: list[dict[str, Any]] = payload.get("items", [])
+        result.listed.extend(item for item in items if item["id"] not in seen)
 
 
 def _tool_result(block: ToolUseBlock, content: str, *, is_error: bool) -> ToolResultBlockParam:

@@ -204,3 +204,87 @@ class TestGivenClaudeFailsBeforeAnythingWasRecorded:
         model = FakeModel(ModelUnavailable("overloaded"))
         with pytest.raises(ModelUnavailable):
             await turn(model, FakeLedger())
+
+
+OCTOBER = {"from": "2026-10-01", "to": "2026-10-31", "limit": 100}
+LUNCH_STORED = {**COFFEE_STORED, "id": "01JBXLUNCH", "item": "lunch", "amountCents": 1500}
+GROCERIES_STORED = {**COFFEE_STORED, "id": "01JBXGROCERIES", "category": "groceries", "amountCents": 8240}
+
+
+def page(*items: dict[str, Any], next_cursor: str | None = None) -> ToolOutcome:
+    return stored(items=list(items), nextCursor=next_cursor)
+
+
+class TestGivenTheCustomerAsksToSeeTheirExpenses:
+    @pytest.fixture
+    async def result(self) -> Any:
+        model = FakeModel(
+            message(tool_use("t1", "list_transactions", OCTOBER), stop_reason="tool_use"),
+            message(text("Here are your 2 expenses for October, $20.00 in total.")),
+        )
+        ledger = FakeLedger({"list_transactions": page(COFFEE_STORED, LUNCH_STORED)})
+        return await turn(model, ledger, "I want to see all my expenses for this month")
+
+    async def test_the_listed_transactions_come_back_as_data(self, result: Any) -> None:
+        assert result.listed == [COFFEE_STORED, LUNCH_STORED]
+
+    async def test_nothing_is_reported_as_recorded(self, result: Any) -> None:
+        assert result.transactions == []
+        assert result.summaries == []
+
+
+class TestGivenClaudeFollowsTheCursorOrListsTheSameTransactionTwice:
+    async def test_every_page_is_kept_once_in_order(self) -> None:
+        model = FakeModel(
+            message(tool_use("t1", "list_transactions", OCTOBER), stop_reason="tool_use"),
+            message(tool_use("t2", "list_transactions", {**OCTOBER, "cursor": "c2"}), stop_reason="tool_use"),
+            message(text("Here are your 3 expenses for October.")),
+        )
+
+        class PagedLedger(FakeLedger):
+            async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolOutcome:
+                self.calls.append((name, arguments))
+                if "cursor" in arguments:
+                    return page(LUNCH_STORED, GROCERIES_STORED)
+                return page(COFFEE_STORED, LUNCH_STORED, next_cursor="c2")
+
+        result = await turn(model, PagedLedger(), "show all my expenses this month")
+        assert [t["id"] for t in result.listed] == ["01JBXCOFFEE", "01JBXLUNCH", "01JBXGROCERIES"]
+
+
+class TestGivenTheCustomerAsksHowMuchTheySpent:
+    async def test_the_summary_comes_back_as_data(self) -> None:
+        summary = {
+            "month": "2026-10",
+            "currency": "AUD",
+            "totalCents": 2000,
+            "byCategory": [{"category": "dining", "totalCents": 2000}],
+        }
+        model = FakeModel(
+            message(tool_use("t1", "get_monthly_summary", {"month": "2026-10"}), stop_reason="tool_use"),
+            message(text("You've spent $20.00 so far this October, all on dining.")),
+        )
+        ledger = FakeLedger({"get_monthly_summary": stored(**summary)})
+        result = await turn(model, ledger, "how much have I spent this month?")
+        assert result.summaries == [summary]
+        assert result.listed == []
+
+
+class TestGivenALookupTheLedgerRejects:
+    async def test_nothing_is_reported_as_listed(self) -> None:
+        model = FakeModel(
+            message(tool_use("t1", "list_transactions", {"cursor": "bad"}), stop_reason="tool_use"),
+            message(text("Sorry, I couldn't load your expenses.")),
+        )
+        ledger = FakeLedger({"list_transactions": ToolOutcome("invalid cursor", is_error=True)})
+        result = await turn(model, ledger, "show my expenses")
+        assert result.listed == []
+
+
+class TestThePrompt:
+    async def test_it_tells_claude_the_app_shows_lookups_so_the_reply_stays_short(self) -> None:
+        model = FakeModel(message(text("Hi!")))
+        await turn(model, FakeLedger(), "hi")
+        system = model.requests[0]["system"]
+        assert "limit 100" in system
+        assert "don't list them" in system
