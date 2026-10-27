@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # "Run workflow" in the Actions tab: redeploy main without a new commit.
+  workflow_dispatch:
 
 jobs:
   test:
@@ -27,7 +29,8 @@ jobs:
   #   variable DEPLOY_ENABLED       ("true" once the secret is set; job-level `if` can't read secrets)
   deploy:
     # Skipped until the one-time setup in README.md is done.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    # Only main: the deploy role trusts nothing else.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     needs: test
     runs-on: ubuntu-latest
     # One deploy at a time; a newer push waits for the running one instead of racing it.
