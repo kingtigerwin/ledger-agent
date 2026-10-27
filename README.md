@@ -38,7 +38,7 @@ GitHub Actions deploys `main` using GitHub's OIDC login, so no AWS keys are stor
    | Secret | `AWS_DEPLOY_ROLE_ARN` | the `DeployRoleArn` output (a secret, so the account ID in it stays out of the public logs) |
    | Variable | `DEPLOY_ENABLED` | `true` (turns the deploy job on) |
 
-3. Push to `main`. The `deploy` job runs `cdk deploy LedgerAgent` and then the smoke test against `https://agent.haoran.cloud`.
+3. Push to `main`, or run the CI workflow on `main` from the Actions tab (**Run workflow**). The `deploy` job runs `cdk deploy LedgerAgent` and then the smoke test against `https://agent.haoran.cloud`.
 
 ## Cost
 
