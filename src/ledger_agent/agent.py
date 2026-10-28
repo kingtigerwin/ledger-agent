@@ -25,10 +25,12 @@ MAX_TOKENS = 2048
 MAX_ROUNDS = 4
 
 # The only ledger-api tools Claude sees, in a fixed order. Changing or deleting transactions happens in the UI.
-OFFERED_TOOLS = ("create_transaction", "list_transactions", "get_monthly_summary")
+# ledger-api lists list_all_transactions only for admin tokens, so customers never get it.
+OFFERED_TOOLS = ("create_transaction", "list_transactions", "get_monthly_summary", "list_all_transactions")
 CREATE = "create_transaction"
 LIST = "list_transactions"
 SUMMARY = "get_monthly_summary"
+LIST_ALL = "list_all_transactions"
 
 DECLINED = "Sorry, I can't help with that."
 UNFINISHED = "Sorry, I couldn't finish that. Please check your transactions before trying again."
@@ -53,8 +55,16 @@ For questions about past spending, use list_transactions or get_monthly_summary.
 transaction and summary these return, as a table, so don't list them in your reply: answer in one or two sentences \
 (how many, the total, anything notable). To list a whole period, pass from and to with limit 100, and follow \
 nextCursor until it's null. You can't edit or delete transactions; the customer does that in the app.
-
+{admin}
 Today is {weekday} {today} in the customer's time zone."""
+
+# Added only when ledger-api offers list_all_transactions, i.e. the customer is an admin.
+ADMIN_PROMPT = """
+This customer is an admin. For anyone else's spending, or everyone's (their own included), use \
+list_all_transactions: pass username for one person, or leave it out for everyone; each item says whose it is. \
+The app shows these as a table too, so answer briefly (per-person totals are useful). Expenses the customer \
+describes are still recorded only in their own ledger, never for someone else.
+"""
 
 
 class ChatMessage(TypedDict):
@@ -107,7 +117,9 @@ async def run_turn(
     # Checks the token before any Claude call: an Unauthorized here costs nothing.
     tools = _offered(await ledger.list_tools())
     offered = {tool["name"] for tool in tools}
-    system = SYSTEM_PROMPT.format(weekday=today.strftime("%A"), today=today.isoformat())
+    system = SYSTEM_PROMPT.format(
+        weekday=today.strftime("%A"), today=today.isoformat(), admin=ADMIN_PROMPT if LIST_ALL in offered else ""
+    )
     history: list[MessageParam] = [_message_param(m) for m in messages]
     result = TurnResult(reply="")
 
@@ -180,7 +192,7 @@ def _keep(tool: str, payload: dict[str, Any], result: TurnResult) -> None:
         result.transactions.append(payload)
     elif tool == SUMMARY:
         result.summaries.append(payload)
-    elif tool == LIST:
+    elif tool in (LIST, LIST_ALL):
         # Claude may list overlapping ranges or re-read a page; the UI should see each transaction once.
         seen = {t["id"] for t in result.listed}
         items: list[dict[str, Any]] = payload.get("items", [])

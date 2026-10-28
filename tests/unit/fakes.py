@@ -20,18 +20,27 @@ LEDGER_TOOLS = [
         "delete_transaction",
     )
 ]
+# What an admin token sees on top: ledger-api lists it only for the admin role with admin:read.
+ADMIN_TOOLS = [*LEDGER_TOOLS, ToolSpec("list_all_transactions", "list_all_transactions description", {})]
 
 
 class FakeLedger:
-    def __init__(self, results: Mapping[str, ToolOutcome | Exception] | None = None, *, authorized: bool = True):
+    def __init__(
+        self,
+        results: Mapping[str, ToolOutcome | Exception] | None = None,
+        *,
+        authorized: bool = True,
+        admin: bool = False,
+    ):
         self.results = dict(results or {})
         self.authorized = authorized
+        self.admin = admin
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     async def list_tools(self) -> list[ToolSpec]:
         if not self.authorized:
             raise Unauthorized("token rejected")
-        return LEDGER_TOOLS
+        return ADMIN_TOOLS if self.admin else LEDGER_TOOLS
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolOutcome:
         self.calls.append((name, arguments))

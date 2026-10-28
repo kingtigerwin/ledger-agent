@@ -82,6 +82,9 @@ class TestWhatClaudeIsGiven:
             "get_monthly_summary",
         ]
 
+    async def test_customers_get_no_admin_instructions(self, request_sent: dict[str, Any]) -> None:
+        assert "list_all_transactions" not in request_sent["system"]
+
     async def test_tools_keep_the_ledgers_descriptions_and_schemas(self, request_sent: dict[str, Any]) -> None:
         create = request_sent["tools"][0]
         assert create["description"] == "create_transaction description"
@@ -288,3 +291,46 @@ class TestThePrompt:
         system = model.requests[0]["system"]
         assert "limit 100" in system
         assert "don't list them" in system
+
+
+HAORAN_COFFEE = {**COFFEE_STORED, "id": "01JBXHAORAN", "userId": "u-haoran", "username": "haoran"}
+CHACE_LUNCH = {**LUNCH_STORED, "id": "01JBXCHACE", "userId": "u-chace", "username": "chace"}
+
+
+class TestGivenAnAdmin:
+    @pytest.fixture
+    async def request_sent(self) -> dict[str, Any]:
+        model = FakeModel(message(text("Which month?")))
+        await turn(model, FakeLedger(admin=True), "show everyone's spending")
+        return model.requests[0]
+
+    async def test_list_all_transactions_is_offered_too_but_still_no_edit_or_delete(
+        self, request_sent: dict[str, Any]
+    ) -> None:
+        assert [t["name"] for t in request_sent["tools"]] == [
+            "create_transaction",
+            "list_transactions",
+            "get_monthly_summary",
+            "list_all_transactions",
+        ]
+
+    async def test_the_prompt_explains_it_and_keeps_recording_to_their_own_ledger(
+        self, request_sent: dict[str, Any]
+    ) -> None:
+        system = request_sent["system"]
+        assert "list_all_transactions" in system
+        assert "username" in system
+        assert "only in their own ledger" in system
+
+
+class TestGivenAnAdminAsksForEveryonesSpending:
+    async def test_everyones_transactions_come_back_as_data_with_whose_they_are(self) -> None:
+        model = FakeModel(
+            message(tool_use("t1", "list_all_transactions", OCTOBER), stop_reason="tool_use"),
+            message(text("Here are October's 2 expenses across everyone, $20.00 in total.")),
+        )
+        ledger = FakeLedger({"list_all_transactions": page(HAORAN_COFFEE, CHACE_LUNCH)}, admin=True)
+        result = await turn(model, ledger, "show all of our spending this month")
+        assert ledger.calls == [("list_all_transactions", OCTOBER)]
+        assert result.listed == [HAORAN_COFFEE, CHACE_LUNCH]
+        assert result.transactions == []
