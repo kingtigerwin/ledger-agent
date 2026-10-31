@@ -47,6 +47,20 @@ def resources(template: Template, type_: str) -> Mapping[str, Mapping[str, Any]]
     return template.find_resources(type_)
 
 
+class TestTheUsageTable:
+    def test_it_stays_inside_dynamodbs_always_free_capacity(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::DynamoDB::Table",
+            {"ProvisionedThroughput": {"ReadCapacityUnits": 1, "WriteCapacityUnits": 2}},
+        )
+
+    def test_it_expires_old_counts(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::DynamoDB::Table",
+            {"TimeToLiveSpecification": {"AttributeName": "expiresAt", "Enabled": True}},
+        )
+
+
 class TestTheFunction:
     def test_it_runs_python_3_13_on_arm(self, template: Template) -> None:
         template.has_resource_properties(
@@ -55,7 +69,12 @@ class TestTheFunction:
                 "Runtime": "python3.13",
                 "Architectures": ["arm64"],
                 "Handler": "ledger_agent.lambda_function.handler",
-                "Environment": {"Variables": {"LEDGER_MCP_URL": "https://api.haoran.cloud/api/mcp"}},
+                "Environment": {
+                    "Variables": {
+                        "LEDGER_MCP_URL": "https://api.haoran.cloud/api/mcp",
+                        "USAGE_TABLE": Match.any_value(),
+                    }
+                },
             },
         )
 
@@ -63,12 +82,13 @@ class TestTheFunction:
         [function] = resources(template, "AWS::Lambda::Function").values()
         assert function["Properties"]["Timeout"] < 30
 
-    def test_it_can_read_only_the_anthropic_api_key(self, template: Template) -> None:
+    def test_it_can_only_read_the_anthropic_api_key_and_update_the_usage_table(self, template: Template) -> None:
         [policy] = resources(template, "AWS::IAM::Policy").values()
-        statements = policy["Properties"]["PolicyDocument"]["Statement"]
-        assert len(statements) == 1
-        assert statements[0]["Action"] == "ssm:GetParameter"
-        assert "parameter/ledger-agent/anthropic-api-key" in str(statements[0]["Resource"])
+        secret, usage = policy["Properties"]["PolicyDocument"]["Statement"]
+        assert secret["Action"] == "ssm:GetParameter"
+        assert "parameter/ledger-agent/anthropic-api-key" in str(secret["Resource"])
+        assert usage["Action"] == "dynamodb:UpdateItem"
+        assert "UsageTable" in str(usage["Resource"])
 
     def test_its_logs_are_kept_two_weeks(self, template: Template) -> None:
         template.has_resource_properties("AWS::Logs::LogGroup", {"RetentionInDays": 14})

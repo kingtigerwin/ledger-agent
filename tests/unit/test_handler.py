@@ -10,6 +10,7 @@ import pytest
 from ledger_agent.agent import ModelUnavailable
 from ledger_agent.handler import MAX_CONTENT_LENGTH, MAX_MESSAGES, Deps, create_handler
 from ledger_agent.ledger import Ledger, LedgerUnavailable
+from ledger_agent.usage import DailyLimitReached
 
 from .fakes import FakeLedger, FakeModel, message, stored, text, tool_use
 
@@ -18,6 +19,7 @@ NOW = datetime(2026, 10, 27, 13, 30, tzinfo=UTC)
 COFFEE = {"date": "2026-10-28", "merchant": "Starbucks", "category": "dining", "item": "coffee", "amountCents": 500}
 COFFEE_STORED = {**COFFEE, "id": "01JBXCOFFEE", "currency": "AUD", "version": 1}
 STARBUCKS = {"role": "user", "content": "I went to starbucks and bought coffee spending 5 dollars"}
+ALICE_TOKEN = "header." + base64.urlsafe_b64encode(b'{"sub":"alice"}').decode().rstrip("=") + ".signature"
 
 
 class Harness:
@@ -25,16 +27,25 @@ class Harness:
         self.model = model or FakeModel(message(text("Hi!")))
         self.ledger = ledger or FakeLedger()
         self.tokens: list[str] = []
+        self.counted: list[tuple[str, datetime]] = []
+        self.allowance_left = True
 
         @asynccontextmanager
         async def connect(token: str) -> AsyncGenerator[Ledger]:
             self.tokens.append(token)
             yield self.ledger
 
-        self.handle = create_handler(Deps(model=self.model, connect=connect, now=lambda: NOW))
+        def count_message(user_id: str, now: datetime) -> None:
+            if not self.allowance_left:
+                raise DailyLimitReached
+            self.counted.append((user_id, now))
+
+        self.handle = create_handler(
+            Deps(model=self.model, connect=connect, now=lambda: NOW, count_message=count_message)
+        )
 
     async def post(
-        self, body: Any = None, *, authorization: str | None = "Bearer customer-token", raw: str | None = None
+        self, body: Any = None, *, authorization: str | None = f"Bearer {ALICE_TOKEN}", raw: str | None = None
     ) -> tuple[int, dict[str, Any]]:
         if body is None:
             body = {"messages": [STARBUCKS], "timeZone": "Australia/Sydney"}
@@ -54,6 +65,41 @@ class Harness:
 
 def error_code(body: dict[str, Any]) -> str:
     return body["error"]["code"]
+
+
+class TestGivenACustomerWithMessagesLeftToday:
+    async def test_it_counts_the_message_against_them(self) -> None:
+        harness = Harness()
+        await harness.post()
+        assert harness.counted == [("alice", NOW)]
+
+
+class TestGivenACustomerWhoHasUsedTodaysMessages:
+    @pytest.fixture
+    async def response(self) -> tuple[Harness, int, dict[str, Any]]:
+        harness = Harness(FakeModel())
+        harness.allowance_left = False
+        status, body = await harness.post()
+        return harness, status, body
+
+    async def test_it_answers_429_with_a_friendly_message(self, response: Any) -> None:
+        _, status, body = response
+        assert status == 429
+        assert error_code(body) == "daily_limit_reached"
+        assert "50 messages" in body["error"]["message"]
+        assert "midnight" in body["error"]["message"]
+
+    async def test_it_doesnt_call_claude(self, response: Any) -> None:
+        harness, _, _ = response
+        assert harness.model.requests == []
+
+
+class TestGivenATokenTheLedgerRejects:
+    async def test_it_doesnt_count_the_message(self) -> None:
+        harness = Harness(ledger=FakeLedger(authorized=False))
+        status, _ = await harness.post()
+        assert status == 401
+        assert harness.counted == []
 
 
 class TestGivenAMessageDescribingAnExpense:
@@ -81,7 +127,7 @@ class TestGivenAMessageDescribingAnExpense:
 
     async def test_it_talks_to_the_ledger_with_the_customers_token(self, response: Any) -> None:
         harness, _, _ = response
-        assert harness.tokens == ["customer-token"]
+        assert harness.tokens == [ALICE_TOKEN]
 
     async def test_today_is_the_date_in_the_customers_time_zone(self, response: Any) -> None:
         harness, _, _ = response
@@ -139,7 +185,7 @@ class TestGivenABase64EncodedBody:
         payload = json.dumps({"messages": [STARBUCKS], "timeZone": "Australia/Sydney"}).encode()
         response = await harness.handle(
             {
-                "headers": {"authorization": "Bearer customer-token"},
+                "headers": {"authorization": f"Bearer {ALICE_TOKEN}"},
                 "body": base64.b64encode(payload).decode(),
                 "isBase64Encoded": True,
             }

@@ -1,6 +1,7 @@
 """One chat turn: Claude reads the customer's message and records or looks up transactions over MCP."""
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Literal, Protocol, TypedDict
@@ -113,9 +114,12 @@ async def run_turn(
     messages: list[ChatMessage],
     today: date,
     max_rounds: int = MAX_ROUNDS,
+    admit: Callable[[], None] = lambda: None,
 ) -> TurnResult:
     # Checks the token before any Claude call: an Unauthorized here costs nothing.
     tools = _offered(await ledger.list_tools())
+    # After the token check, so only a real customer's message is counted; `admit` raises to stop the turn.
+    admit()
     offered = {tool["name"] for tool in tools}
     system = SYSTEM_PROMPT.format(
         weekday=today.strftime("%A"), today=today.isoformat(), admin=ADMIN_PROMPT if LIST_ALL in offered else ""

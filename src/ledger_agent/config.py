@@ -5,11 +5,19 @@ import boto3
 
 if TYPE_CHECKING:
     # Dev-only stubs; not installed on Lambda.
+    from mypy_boto3_dynamodb.service_resource import Table
     from mypy_boto3_ssm import SSMClient
 
 REGION = "ap-southeast-2"
 API_KEY_PARAMETER = "/ledger-agent/anthropic-api-key"
 LEDGER_MCP_URL = os.environ.get("LEDGER_MCP_URL", "https://api.haoran.cloud/api/mcp")
+
+
+def usage_table() -> "Table":
+    """The table counting each customer's messages; the stack names it."""
+    return boto3.resource("dynamodb", region_name=REGION).Table(  # pyright: ignore[reportUnknownMemberType]
+        os.environ["USAGE_TABLE"]
+    )
 
 
 def anthropic_api_key() -> str:
