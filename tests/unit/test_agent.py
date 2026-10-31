@@ -5,6 +5,7 @@ import pytest
 
 from ledger_agent.agent import ModelUnavailable, run_turn
 from ledger_agent.ledger import LedgerUnavailable, ToolOutcome, Unauthorized
+from ledger_agent.usage import DailyLimitReached
 
 from .fakes import FakeLedger, FakeModel, message, stored, text, thinking, tool_use
 
@@ -30,6 +31,23 @@ class TestGivenATokenTheLedgerRejects:
         model = FakeModel()
         with pytest.raises(Unauthorized):
             await turn(model, FakeLedger(authorized=False))
+        assert model.requests == []
+
+    async def test_it_doesnt_count_the_message(self) -> None:
+        admitted: list[bool] = []
+        with pytest.raises(Unauthorized):
+            await turn(FakeModel(), FakeLedger(authorized=False), admit=lambda: admitted.append(True))
+        assert admitted == []
+
+
+class TestGivenACustomerWhoIsntAdmitted:
+    async def test_it_doesnt_call_claude(self) -> None:
+        def refuse() -> None:
+            raise DailyLimitReached
+
+        model = FakeModel()
+        with pytest.raises(DailyLimitReached):
+            await turn(model, FakeLedger(), admit=refuse)
         assert model.requests == []
 
 

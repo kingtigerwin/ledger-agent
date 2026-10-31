@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from .agent import ChatMessage, Model, ModelUnavailable, run_turn
 from .clock import InvalidTimeZone, today_in
 from .ledger import Ledger, LedgerUnavailable, Unauthorized
+from .usage import DAILY_MESSAGE_LIMIT, DailyLimitReached, user_id_from
 
 # Bounds on what one request can make Claude read, since Claude is the part that costs money.
 MAX_MESSAGES = 20
@@ -30,6 +31,8 @@ class Deps:
     model: Model
     connect: Callable[[str], AbstractAsyncContextManager[Ledger]]
     now: Callable[[], datetime]
+    # Raises DailyLimitReached once the customer has used today's messages.
+    count_message: Callable[[str, datetime], None]
 
 
 class ApiError(Exception):
@@ -69,11 +72,23 @@ def create_handler(deps: Deps) -> Callable[[Event], Awaitable[Response]]:
                 raise ApiError(400, "invalid_time_zone", str(err)) from err
             messages = [ChatMessage(role=m.role, content=m.content) for m in request.messages]
             async with deps.connect(token) as ledger:
-                result = await run_turn(model=deps.model, ledger=ledger, messages=messages, today=today)
+                result = await run_turn(
+                    model=deps.model,
+                    ledger=ledger,
+                    messages=messages,
+                    today=today,
+                    admit=lambda: deps.count_message(user_id_from(token), deps.now()),
+                )
         except ApiError as err:
             return _error(err.status, err.code, err.message)
         except Unauthorized:
             return _error(401, "unauthorized", "Sign in again.")
+        except DailyLimitReached:
+            log.info("daily_limit_reached")
+            message = (
+                f"You've used today's {DAILY_MESSAGE_LIMIT} messages. You can send more after midnight Sydney time."
+            )
+            return _error(429, "daily_limit_reached", message)
         except LedgerUnavailable as err:
             log.warning("ledger_unavailable", extra={"reason": str(err)})
             return _error(502, "ledger_unavailable", "The ledger can't be reached; try again shortly.")

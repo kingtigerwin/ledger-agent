@@ -4,6 +4,7 @@
     "uiOrigins": [
       "http://localhost:5173"
     ],
+    "smokeTestUserId": "0b455c4f-3967-42e2-a32c-1af88709c2c1",
     "customDomain": {
       "domainName": "agent.haoran.cloud",
       "zoneName": "haoran.cloud",

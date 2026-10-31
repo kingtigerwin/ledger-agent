@@ -17,7 +17,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "boto3-stubs[ssm]>=1.43.119",
+    "boto3-stubs[dynamodb,ssm]>=1.43.119",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.1",

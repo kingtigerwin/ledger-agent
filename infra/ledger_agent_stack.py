@@ -2,9 +2,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from aws_cdk import Arn, ArnComponents, CfnOutput, Duration, Stack
+from aws_cdk import Arn, ArnComponents, CfnOutput, Duration, RemovalPolicy, Stack
 from aws_cdk import aws_apigatewayv2 as apigw
 from aws_cdk import aws_certificatemanager as acm
+from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_logs as logs
@@ -37,10 +38,24 @@ class LedgerAgentStack(Stack):
         *,
         code: lambda_.Code,
         ui_origins: Sequence[str],
+        smoke_test_user_id: str,
         custom_domain: CustomDomain | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(scope, id, **kwargs)
+
+        # Provisioned, not on-demand: DynamoDB's always-free 25 units cover provisioned capacity only. Two writes a
+        # second matches the stage's throttle. The counts are worth nothing after the day, so they aren't kept.
+        usage = dynamodb.Table(
+            self,
+            "UsageTable",
+            partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
+            billing_mode=dynamodb.BillingMode.PROVISIONED,
+            read_capacity=1,
+            write_capacity=2,
+            time_to_live_attribute="expiresAt",
+            removal_policy=RemovalPolicy.DESTROY,
+        )
 
         function = lambda_.Function(
             self,
@@ -53,7 +68,11 @@ class LedgerAgentStack(Stack):
             memory_size=512,
             # The HTTP API gives up after 30 seconds; stop first so the error is ours.
             timeout=Duration.seconds(28),
-            environment={"LEDGER_MCP_URL": LEDGER_MCP_URL},
+            environment={
+                "LEDGER_MCP_URL": LEDGER_MCP_URL,
+                "USAGE_TABLE": usage.table_name,
+                "SMOKE_TEST_USER_ID": smoke_test_user_id,
+            },
             logging_format=lambda_.LoggingFormat.JSON,
             application_log_level_v2=lambda_.ApplicationLogLevel.INFO,
             log_group=logs.LogGroup(self, "AgentLogs", retention=logs.RetentionDays.TWO_WEEKS),
@@ -69,6 +88,8 @@ class LedgerAgentStack(Stack):
                 ],
             )
         )
+
+        function.add_to_role_policy(iam.PolicyStatement(actions=["dynamodb:UpdateItem"], resources=[usage.table_arn]))
 
         api = apigw.HttpApi(
             self,

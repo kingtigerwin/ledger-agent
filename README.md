@@ -42,4 +42,4 @@ GitHub Actions deploys `main` using GitHub's OIDC login, so no AWS keys are stor
 
 ## Cost
 
-AWS stays within the free tier: Lambda, HTTP API, two SSM standard parameters, two-week log retention, a free ACM certificate and Route 53 alias records (the `haoran.cloud` zone already existed). Claude calls are the only paid part: Haiku 5.5, bounded by the token check before any call, stage throttling (2 requests per second), request size limits and at most 4 Claude calls per turn. Each deploy's smoke test makes one call.
+AWS stays within the free tier: Lambda, HTTP API, two SSM standard parameters, two-week log retention, a free ACM certificate and Route 53 alias records (the `haoran.cloud` zone already existed). Claude calls are the only paid part: Haiku 5.5, bounded by the token check before any call, 5 messages per customer per day, stage throttling (2 requests per second), request size limits and at most 4 Claude calls per turn. Each deploy's smoke test makes one call.

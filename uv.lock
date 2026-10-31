@@ -140,6 +140,9 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+dynamodb = [
+    { name = "mypy-boto3-dynamodb" },
+]
 ssm = [
     { name = "mypy-boto3-ssm" },
 ]
@@ -566,7 +569,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["ssm"] },
+    { name = "boto3-stubs", extra = ["dynamodb", "ssm"] },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -588,7 +591,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["ssm"], specifier = ">=1.43.119" },
+    { name = "boto3-stubs", extras = ["dynamodb", "ssm"], specifier = ">=1.43.119" },
     { name = "pyright", specifier = ">=1.1.414" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.1" },
@@ -635,6 +638,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9e/2d/7c251e34207f6c51000312fc8839111ac45cfe02023f90b44e7f1051dd8e/mcp_types-2.3.0.tar.gz", hash = "sha256:d1e46549edb35ee19a94940fcee6d1addd7e589ab7ea92dda83f5d84781fc362", size = 65898, upload-time = "2026-10-02T22:06:57.863Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ce/48/32583066b155bb5d4507e7887dc88ee23118cc4de8e2a12870c49719e2a8/mcp_types-2.3.0-py3-none-any.whl", hash = "sha256:968efdbdaedfab06adae40d378a34395f1090c5921d4be3c9cde283aaf76d91d", size = 69108, upload-time = "2026-10-02T22:06:54.099Z" },
+]
+
+[[package]]
+name = "mypy-boto3-dynamodb"
+version = "1.43.116"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/50/a7/f68dd94c543055ca8e4bc24953b781da895c5423ba197bc881ce6b6250fb/mypy_boto3_dynamodb-1.43.116.tar.gz", hash = "sha256:43b158cdb563004bb0b6e63af790557755bb53c96e9eabbfdb97c2b0e5bcadca", size = 50666, upload-time = "2026-10-20T21:59:46.411Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/79/08/79edd621298ff0c7e4ea066bd0be525c96d8a4168246651817f15272ae63/mypy_boto3_dynamodb-1.43.116-py3-none-any.whl", hash = "sha256:fa594df0da61fadd73113b819094d65fb68c751e3edfac5c7e61a14b7e907fab", size = 60913, upload-time = "2026-10-20T21:59:43.677Z" },
 ]
 
 [[package]]
