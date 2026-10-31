@@ -10,7 +10,7 @@ import pytest
 from ledger_agent.agent import ModelUnavailable
 from ledger_agent.handler import MAX_CONTENT_LENGTH, MAX_MESSAGES, Deps, create_handler
 from ledger_agent.ledger import Ledger, LedgerUnavailable
-from ledger_agent.usage import DailyLimitReached
+from ledger_agent.usage import DailyLimitReached, DailyTotalReached
 
 from .fakes import FakeLedger, FakeModel, message, stored, text, tool_use
 
@@ -29,6 +29,7 @@ class Harness:
         self.tokens: list[str] = []
         self.counted: list[tuple[str, datetime]] = []
         self.allowance_left = True
+        self.total_left = True
 
         @asynccontextmanager
         async def connect(token: str) -> AsyncGenerator[Ledger]:
@@ -38,6 +39,8 @@ class Harness:
         def count_message(user_id: str, now: datetime) -> None:
             if not self.allowance_left:
                 raise DailyLimitReached
+            if not self.total_left:
+                raise DailyTotalReached
             self.counted.append((user_id, now))
 
         self.handle = create_handler(
@@ -87,6 +90,26 @@ class TestGivenACustomerWhoHasUsedTodaysMessages:
         assert status == 429
         assert error_code(body) == "daily_limit_reached"
         assert "5 messages" in body["error"]["message"]
+        assert "midnight" in body["error"]["message"]
+
+    async def test_it_doesnt_call_claude(self, response: Any) -> None:
+        harness, _, _ = response
+        assert harness.model.requests == []
+
+
+class TestGivenEveryoneHasUsedTodaysTotal:
+    @pytest.fixture
+    async def response(self) -> tuple[Harness, int, dict[str, Any]]:
+        harness = Harness(FakeModel())
+        harness.total_left = False
+        status, body = await harness.post()
+        return harness, status, body
+
+    async def test_it_answers_429_saying_the_chat_is_busy(self, response: Any) -> None:
+        _, status, body = response
+        assert status == 429
+        assert error_code(body) == "daily_total_reached"
+        assert "busy" in body["error"]["message"]
         assert "midnight" in body["error"]["message"]
 
     async def test_it_doesnt_call_claude(self, response: Any) -> None:

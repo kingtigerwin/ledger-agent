@@ -44,15 +44,16 @@ class LedgerAgentStack(Stack):
     ) -> None:
         super().__init__(scope, id, **kwargs)
 
-        # Provisioned, not on-demand: DynamoDB's always-free 25 units cover provisioned capacity only. Two writes a
-        # second matches the stage's throttle. The counts are worth nothing after the day, so they aren't kept.
+        # Provisioned, not on-demand: DynamoDB's always-free 25 units cover provisioned capacity only. Four writes a
+        # second matches the stage's throttle at two writes per message. The counts are worth nothing after the day,
+        # so they aren't kept.
         usage = dynamodb.Table(
             self,
             "UsageTable",
             partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
             billing_mode=dynamodb.BillingMode.PROVISIONED,
             read_capacity=1,
-            write_capacity=2,
+            write_capacity=4,
             time_to_live_attribute="expiresAt",
             removal_policy=RemovalPolicy.DESTROY,
         )
