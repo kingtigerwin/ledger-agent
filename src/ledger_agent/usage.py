@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     # Dev-only stubs; not installed on Lambda.
     from mypy_boto3_dynamodb.service_resource import Table
 
-DAILY_MESSAGE_LIMIT = 50
+DAILY_MESSAGE_LIMIT = 5
 # One zone for everyone, not the customer's: the UI sends that one, so changing it could buy extra days.
 RESET_ZONE = "Australia/Sydney"
 # Past the end of the day in any case. The date is in the key, so a late expiry changes nothing.
@@ -38,9 +38,12 @@ def user_id_from(token: str) -> str:
     return subject
 
 
-def count_message(table: "Table", user_id: str, now: datetime) -> None:
+def count_message(table: "Table", user_id: str, now: datetime, *, exempt: str = "") -> None:
     """Counts one message, or raises DailyLimitReached. One conditional write, so messages sent at the same moment
-    can't get past the limit together."""
+    can't get past the limit together. `exempt` is the deploy smoke test's user, which sends two messages per deploy,
+    so a third deploy in a day would otherwise fail its smoke test."""
+    if user_id == exempt:
+        return
     day = today_in(RESET_ZONE, now).isoformat()
     try:
         table.update_item(

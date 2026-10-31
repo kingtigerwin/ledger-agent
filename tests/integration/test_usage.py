@@ -69,6 +69,18 @@ class TestGivenACustomerWhoHasUsedTheirAllowance:
         count_message(table, "alice", AFTER_MIDNIGHT)
 
 
+class TestGivenTheSmokeTestUser:
+    def test_it_isnt_limited_or_counted(self, table: "Table") -> None:
+        for _ in range(DAILY_MESSAGE_LIMIT + 1):
+            count_message(table, "agent-e2e", BEFORE_MIDNIGHT, exempt="agent-e2e")
+        assert table.scan()["Items"] == []
+
+    def test_everyone_else_still_is(self, table: "Table") -> None:
+        use_up(table, "alice", BEFORE_MIDNIGHT)
+        with pytest.raises(DailyLimitReached):
+            count_message(table, "alice", BEFORE_MIDNIGHT, exempt="agent-e2e")
+
+
 class TestGivenMoreMessagesAtOnceThanAreLeft:
     def test_it_lets_through_only_the_allowance(self, table: "Table") -> None:
         def attempt(_: int) -> bool:

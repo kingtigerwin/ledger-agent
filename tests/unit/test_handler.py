@@ -86,7 +86,7 @@ class TestGivenACustomerWhoHasUsedTodaysMessages:
         _, status, body = response
         assert status == 429
         assert error_code(body) == "daily_limit_reached"
-        assert "50 messages" in body["error"]["message"]
+        assert "5 messages" in body["error"]["message"]
         assert "midnight" in body["error"]["message"]
 
     async def test_it_doesnt_call_claude(self, response: Any) -> None:

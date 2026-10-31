@@ -8,7 +8,7 @@ from typing import Any
 from anthropic import AsyncAnthropic
 
 from .agent import Claude
-from .config import LEDGER_MCP_URL, anthropic_api_key, usage_table
+from .config import LEDGER_MCP_URL, SMOKE_TEST_USER_ID, anthropic_api_key, usage_table
 from .handler import Deps, create_handler
 from .mcp_ledger import connect
 from .usage import count_message
@@ -24,7 +24,7 @@ _handle = create_handler(
         model=Claude(AsyncAnthropic(api_key=anthropic_api_key())),
         connect=lambda token: connect(LEDGER_MCP_URL, token),
         now=lambda: datetime.now(UTC),
-        count_message=lambda user_id, now: count_message(_usage, user_id, now),
+        count_message=lambda user_id, now: count_message(_usage, user_id, now, exempt=SMOKE_TEST_USER_ID),
     )
 )
 
