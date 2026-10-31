@@ -24,6 +24,8 @@ AGENT_URL = os.environ.get("AGENT_URL", "https://agent.haoran.cloud").rstrip("/"
 LEDGER_URL = os.environ.get("LEDGER_URL", "https://api.haoran.cloud").rstrip("/")
 REGION = "ap-southeast-2"
 USERNAME = "agent-e2e"
+# ledger-api requires one to register. Only used if the user has to be created again.
+EMAIL = "agent-e2e@example.com"
 PASSWORD_PARAMETER = "/ledger-agent/e2e-password"
 ADMIN_USERNAME = "sisi"
 ADMIN_PASSWORD_PARAMETER = "/ledger-api/admin-password"
@@ -77,7 +79,9 @@ def main() -> None:
 
 
 def sign_in(http: httpx2.Client, password: str) -> str:
-    registered = http.post(f"{LEDGER_URL}/api/v1/auth/register", json={"username": USERNAME, "password": password})
+    registered = http.post(
+        f"{LEDGER_URL}/api/v1/auth/register", json={"username": USERNAME, "password": password, "email": EMAIL}
+    )
     expect(f"register {USERNAME} (or already exists)", registered.status_code in (201, 409), registered)
     session = login(http, USERNAME, password)
     if session.status_code == 403:
