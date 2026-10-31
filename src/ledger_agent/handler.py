@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from .agent import ChatMessage, Model, ModelUnavailable, run_turn
 from .clock import InvalidTimeZone, today_in
 from .ledger import Ledger, LedgerUnavailable, Unauthorized
-from .usage import DAILY_MESSAGE_LIMIT, DailyLimitReached, user_id_from
+from .usage import DAILY_MESSAGE_LIMIT, DailyLimitReached, DailyTotalReached, user_id_from
 
 # Bounds on what one request can make Claude read, since Claude is the part that costs money.
 MAX_MESSAGES = 20
@@ -89,6 +89,11 @@ def create_handler(deps: Deps) -> Callable[[Event], Awaitable[Response]]:
                 f"You've used today's {DAILY_MESSAGE_LIMIT} messages. You can send more after midnight Sydney time."
             )
             return _error(429, "daily_limit_reached", message)
+        except DailyTotalReached:
+            log.warning("daily_total_reached")
+            return _error(
+                429, "daily_total_reached", "The chat is very busy today. It'll be back after midnight Sydney time."
+            )
         except LedgerUnavailable as err:
             log.warning("ledger_unavailable", extra={"reason": str(err)})
             return _error(502, "ledger_unavailable", "The ledger can't be reached; try again shortly.")

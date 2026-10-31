@@ -52,7 +52,7 @@ class TestTheUsageTable:
     def test_it_stays_inside_dynamodbs_always_free_capacity(self, template: Template) -> None:
         template.has_resource_properties(
             "AWS::DynamoDB::Table",
-            {"ProvisionedThroughput": {"ReadCapacityUnits": 1, "WriteCapacityUnits": 2}},
+            {"ProvisionedThroughput": {"ReadCapacityUnits": 1, "WriteCapacityUnits": 4}},
         )
 
     def test_it_expires_old_counts(self, template: Template) -> None:

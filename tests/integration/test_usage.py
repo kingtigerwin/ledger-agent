@@ -10,7 +10,13 @@ from typing import TYPE_CHECKING
 import boto3
 import pytest
 
-from ledger_agent.usage import DAILY_MESSAGE_LIMIT, DailyLimitReached, count_message
+from ledger_agent.usage import (
+    DAILY_MESSAGE_LIMIT,
+    DAILY_TOTAL_LIMIT,
+    DailyLimitReached,
+    DailyTotalReached,
+    count_message,
+)
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.service_resource import Table
@@ -67,6 +73,32 @@ class TestGivenACustomerWhoHasUsedTheirAllowance:
     def test_it_starts_again_at_midnight_in_sydney(self, table: "Table") -> None:
         use_up(table, "alice", BEFORE_MIDNIGHT)
         count_message(table, "alice", AFTER_MIDNIGHT)
+
+
+def use_up_the_total(table: "Table", now: datetime) -> None:
+    for number in range(DAILY_TOTAL_LIMIT):
+        count_message(table, f"user-{number}", now)
+
+
+class TestGivenEveryoneTogetherHasUsedTheDailyTotal:
+    def test_it_refuses_anyone_with_messages_of_their_own_left(self, table: "Table") -> None:
+        use_up_the_total(table, BEFORE_MIDNIGHT)
+        with pytest.raises(DailyTotalReached):
+            count_message(table, "alice", BEFORE_MIDNIGHT)
+
+    def test_it_starts_again_at_midnight_in_sydney(self, table: "Table") -> None:
+        use_up_the_total(table, BEFORE_MIDNIGHT)
+        count_message(table, "alice", AFTER_MIDNIGHT)
+
+
+class TestGivenACustomerPastTheirOwnLimit:
+    def test_their_refused_messages_dont_use_up_the_total(self, table: "Table") -> None:
+        use_up(table, "alice", BEFORE_MIDNIGHT)
+        for _ in range(3):
+            with pytest.raises(DailyLimitReached):
+                count_message(table, "alice", BEFORE_MIDNIGHT)
+        total = table.get_item(Key={"pk": "TOTAL#2026-10-27"}).get("Item", {})
+        assert total["messages"] == DAILY_MESSAGE_LIMIT
 
 
 class TestGivenTheSmokeTestUser:
