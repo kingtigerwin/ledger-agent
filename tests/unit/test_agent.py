@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from ledger_agent.agent import ModelUnavailable, run_turn
+from ledger_agent.agent import SYSTEM_PROMPT, ModelUnavailable, TurnResult, run_turn
 from ledger_agent.ledger import LedgerUnavailable, ToolOutcome, Unauthorized
 from ledger_agent.usage import DailyLimitReached
 
@@ -93,11 +93,12 @@ class TestWhatClaudeIsGiven:
         await turn(model, FakeLedger(), "I bought coffee")
         return model.requests[0]
 
-    async def test_only_create_list_and_summary_are_offered(self, request_sent: dict[str, Any]) -> None:
+    async def test_only_create_list_summary_and_search_are_offered(self, request_sent: dict[str, Any]) -> None:
         assert [t["name"] for t in request_sent["tools"]] == [
             "create_transaction",
             "list_transactions",
             "get_monthly_summary",
+            "search_purchases",
         ]
 
     async def test_customers_get_no_admin_instructions(self, request_sent: dict[str, Any]) -> None:
@@ -329,6 +330,7 @@ class TestGivenAnAdmin:
             "create_transaction",
             "list_transactions",
             "get_monthly_summary",
+            "search_purchases",
             "list_all_transactions",
         ]
 
@@ -352,3 +354,58 @@ class TestGivenAnAdminAsksForEveryonesSpending:
         assert ledger.calls == [("list_all_transactions", OCTOBER)]
         assert result.listed == [HAORAN_COFFEE, CHACE_LUNCH]
         assert result.transactions == []
+
+
+BANANAS = {
+    "matches": [
+        {
+            "transactionId": "01JBX",
+            "date": "2026-11-01",
+            "merchant": "Coles",
+            "name": "BANANAS PERKG",
+            "amountCents": 284,
+        }
+    ],
+    "count": 1,
+    "totalCents": 284,
+    "currency": "AUD",
+    "includesPoints": False,
+    "from": "2025-09-27",
+    "to": "2026-11-01",
+}
+
+
+class TestGivenAQuestionAboutSomethingBought:
+    async def turn(self, *replies: Any, ledger: FakeLedger) -> TurnResult:
+        return await run_turn(
+            model=FakeModel(*replies),
+            ledger=ledger,
+            messages=[{"role": "user", "content": "how much did I spend on bananas?"}],
+            today=date(2026, 11, 1),
+        )
+
+    async def test_it_passes_the_search_through_and_keeps_the_matches_as_data(self) -> None:
+        search = tool_use("t1", "search_purchases", {"terms": ["banana", "香蕉"]})
+        ledger = FakeLedger({"search_purchases": stored(**BANANAS)})
+
+        result = await self.turn(
+            message(search, stop_reason="tool_use"), message(text("$2.84 on bananas.")), ledger=ledger
+        )
+
+        assert ledger.calls == [("search_purchases", {"terms": ["banana", "香蕉"]})]
+        assert result.purchases == [BANANAS]
+        assert result.reply == "$2.84 on bananas."
+
+    async def test_a_failed_search_keeps_nothing(self) -> None:
+        search = tool_use("t1", "search_purchases", {"terms": ["banana"]})
+        ledger = FakeLedger({"search_purchases": ToolOutcome("Search at most 400 days", is_error=True)})
+
+        result = await self.turn(
+            message(search, stop_reason="tool_use"), message(text("Try a shorter period.")), ledger=ledger
+        )
+
+        assert result.purchases == []
+
+    def test_the_prompt_says_when_to_search(self) -> None:
+        assert "search_purchases" in SYSTEM_PROMPT
+        assert "includesPoints" in SYSTEM_PROMPT

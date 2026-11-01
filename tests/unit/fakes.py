@@ -8,7 +8,7 @@ from anthropic.types import Message
 
 from ledger_agent.ledger import ToolOutcome, ToolSpec, Unauthorized
 
-# The six tools ledger-api's MCP server lists for a customer token (see ledger-api/src/mcp/handler.ts).
+# The seven tools ledger-api's MCP server lists for a customer token (see ledger-api/src/mcp/handler.ts).
 LEDGER_TOOLS = [
     ToolSpec(name, f"{name} description", {"type": "object", "properties": {"probe": {"type": "string"}}})
     for name in (
@@ -16,6 +16,7 @@ LEDGER_TOOLS = [
         "get_transaction",
         "list_transactions",
         "get_monthly_summary",
+        "search_purchases",
         "update_transaction",
         "delete_transaction",
     )
