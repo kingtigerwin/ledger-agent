@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from mypy_boto3_dynamodb.service_resource import Table
 
 DAILY_MESSAGE_LIMIT = 5
+# Separate from messages: one shop can leave several receipts, and each is a single small call.
+DAILY_RECEIPT_LIMIT = 10
 # Across everyone: anyone can join with a Google account, so this is what many accounts together run into.
 DAILY_TOTAL_LIMIT = 300
 # One zone for everyone, not the customer's: the UI sends that one, so changing it could buy extra days.
@@ -24,6 +26,10 @@ _KEEP_FOR = timedelta(days=2)
 
 class DailyLimitReached(Exception):
     """The customer has used today's messages."""
+
+
+class DailyReceiptLimitReached(Exception):
+    """The customer has used today's receipts."""
 
 
 class DailyTotalReached(Exception):
@@ -56,6 +62,18 @@ def count_message(table: "Table", user_id: str, now: datetime, *, exempt: str = 
     expires = int((now + _KEEP_FOR).timestamp())
     if not _count(table, f"USER#{user_id}#{day}", DAILY_MESSAGE_LIMIT, expires):
         raise DailyLimitReached
+    if not _count(table, f"TOTAL#{day}", DAILY_TOTAL_LIMIT, expires):
+        raise DailyTotalReached
+
+
+def count_receipt(table: "Table", user_id: str, now: datetime, *, exempt: str = "") -> None:
+    """As count_message, for a photo of a receipt: its own allowance, and the same total for everyone."""
+    if user_id == exempt:
+        return
+    day = today_in(RESET_ZONE, now).isoformat()
+    expires = int((now + _KEEP_FOR).timestamp())
+    if not _count(table, f"USER#{user_id}#RECEIPTS#{day}", DAILY_RECEIPT_LIMIT, expires):
+        raise DailyReceiptLimitReached
     if not _count(table, f"TOTAL#{day}", DAILY_TOTAL_LIMIT, expires):
         raise DailyTotalReached
 

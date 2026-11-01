@@ -12,10 +12,13 @@ import pytest
 
 from ledger_agent.usage import (
     DAILY_MESSAGE_LIMIT,
+    DAILY_RECEIPT_LIMIT,
     DAILY_TOTAL_LIMIT,
     DailyLimitReached,
+    DailyReceiptLimitReached,
     DailyTotalReached,
     count_message,
+    count_receipt,
 )
 
 if TYPE_CHECKING:
@@ -125,3 +128,32 @@ class TestGivenMoreMessagesAtOnceThanAreLeft:
         with ThreadPoolExecutor(max_workers=8) as pool:
             accepted = sum(pool.map(attempt, range(DAILY_MESSAGE_LIMIT + 10)))
         assert accepted == DAILY_MESSAGE_LIMIT
+
+
+class TestGivenACustomerScanningReceipts:
+    def test_they_get_the_daily_allowance_and_no_more(self, table: "Table") -> None:
+        for _ in range(DAILY_RECEIPT_LIMIT):
+            count_receipt(table, "alice", BEFORE_MIDNIGHT)
+
+        with pytest.raises(DailyReceiptLimitReached):
+            count_receipt(table, "alice", BEFORE_MIDNIGHT)
+
+    def test_receipts_dont_use_up_their_chat_messages(self, table: "Table") -> None:
+        for _ in range(DAILY_RECEIPT_LIMIT):
+            count_receipt(table, "bob", BEFORE_MIDNIGHT)
+
+        count_message(table, "bob", BEFORE_MIDNIGHT)
+
+    def test_the_allowance_comes_back_the_next_day(self, table: "Table") -> None:
+        for _ in range(DAILY_RECEIPT_LIMIT):
+            count_receipt(table, "carol", BEFORE_MIDNIGHT)
+
+        count_receipt(table, "carol", AFTER_MIDNIGHT)
+
+    def test_each_receipt_counts_towards_everyones_total(self, table: "Table") -> None:
+        count_receipt(table, "dave", BEFORE_MIDNIGHT)
+
+        for number in range(DAILY_TOTAL_LIMIT - 1):
+            count_message(table, f"user-{number}", BEFORE_MIDNIGHT)
+        with pytest.raises(DailyTotalReached):
+            count_message(table, "erin", BEFORE_MIDNIGHT)

@@ -97,9 +97,9 @@ class TestTheFunction:
 
 
 class TestTheHttpApi:
-    def test_it_has_only_the_chat_route(self, template: Template) -> None:
+    def test_it_has_only_the_chat_and_receipt_routes(self, template: Template) -> None:
         routes = [r["Properties"]["RouteKey"] for r in resources(template, "AWS::ApiGatewayV2::Route").values()]
-        assert routes == ["POST /agent/v1/chat"]
+        assert sorted(routes) == ["POST /agent/v1/chat", "POST /agent/v1/receipts/read"]
 
     def test_it_allows_the_ui_origins_with_the_bearer_header(self, template: Template) -> None:
         template.has_resource_properties(

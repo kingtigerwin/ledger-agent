@@ -103,12 +103,10 @@ class LedgerAgentStack(Stack):
                 max_age=Duration.hours(1),
             ),
         )
-        api.add_routes(
-            path="/agent/v1/chat",
-            methods=[apigw.HttpMethod.POST],
-            # jsii's generated interfaces don't satisfy pyright's protocol check, though Function implements IFunction.
-            integration=HttpLambdaIntegration("AgentIntegration", function),  # pyright: ignore[reportArgumentType]
-        )
+        # jsii's generated interfaces don't satisfy pyright's protocol check, though Function implements IFunction.
+        integration = HttpLambdaIntegration("AgentIntegration", function)  # pyright: ignore[reportArgumentType]
+        for path in ("/agent/v1/chat", "/agent/v1/receipts/read"):
+            api.add_routes(path=path, methods=[apigw.HttpMethod.POST], integration=integration)
         domain = self._domain(custom_domain) if custom_domain else None
         # Every request that gets past the token check costs a Claude call, so keep the rate household-sized.
         stage = apigw.HttpStage(
