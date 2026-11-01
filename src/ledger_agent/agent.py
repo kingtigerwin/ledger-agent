@@ -27,10 +27,17 @@ MAX_ROUNDS = 4
 
 # The only ledger-api tools Claude sees, in a fixed order. Changing or deleting transactions happens in the UI.
 # ledger-api lists list_all_transactions only for admin tokens, so customers never get it.
-OFFERED_TOOLS = ("create_transaction", "list_transactions", "get_monthly_summary", "list_all_transactions")
+OFFERED_TOOLS = (
+    "create_transaction",
+    "list_transactions",
+    "get_monthly_summary",
+    "search_purchases",
+    "list_all_transactions",
+)
 CREATE = "create_transaction"
 LIST = "list_transactions"
 SUMMARY = "get_monthly_summary"
+SEARCH = "search_purchases"
 LIST_ALL = "list_all_transactions"
 
 DECLINED = "Sorry, I can't help with that."
@@ -56,6 +63,14 @@ For questions about past spending, use list_transactions or get_monthly_summary.
 transaction and summary these return, as a table, so don't list them in your reply: answer in one or two sentences \
 (how many, the total, anything notable). To list a whole period, pass from and to with limit 100, and follow \
 nextCursor until it's null. You can't edit or delete transactions; the customer does that in the app.
+
+For what the customer bought, such as "how much did I spend on bananas?", use search_purchases. It searches the items \
+on their receipts and the expenses they've told you about, and only finds the words you give it, so pass the thing in \
+the singular as one term, and as separate terms its name in English and in Chinese, whichever the customer used, and \
+any everyday alternatives ("banana", "香蕉"; "minced beef", "beef mince", "牛肉末"). Pass from and to for a period; \
+with neither, it covers about the last 13 months. The app shows the matches as a table, so answer in one sentence \
+with the total, how many purchases and the period. If includesPoints is true, add that these are shelf prices and \
+some was paid with points. If nothing matched, say so, and that you can only find what's been recorded.
 {admin}
 Today is {weekday} {today} in the customer's time zone."""
 
@@ -105,6 +120,8 @@ class TurnResult:
     # get_monthly_summary results.
     listed: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
     summaries: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
+    # What search_purchases found, which holds only the matching lines.
+    purchases: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
 
 
 async def run_turn(
@@ -196,6 +213,8 @@ def _keep(tool: str, payload: dict[str, Any], result: TurnResult) -> None:
         result.transactions.append(payload)
     elif tool == SUMMARY:
         result.summaries.append(payload)
+    elif tool == SEARCH:
+        result.purchases.append(payload)
     elif tool in (LIST, LIST_ALL):
         # Claude may list overlapping ranges or re-read a page; the UI should see each transaction once.
         seen = {t["id"] for t in result.listed}

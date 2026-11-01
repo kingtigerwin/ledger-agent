@@ -22,6 +22,7 @@ An agent that turns a customer's free text ("I went to starbucks and bought coff
 
 - `create_transaction` — records an expense straight away; there is no confirmation step.
 - `list_transactions`, `get_monthly_summary` — read-only, for questions about past spending.
+- `search_purchases` — read-only, for what was bought ("how much did I spend on bananas?"). ledger-api matches literal words, so Claude passes the singular, its name in English and Chinese, and everyday alternatives as separate terms. It returns only the matching lines, so Claude never reads whole receipts, and the response carries them as `purchases` for the UI's table.
 - `list_all_transactions` — admins only, read-only: every customer's transactions (or one customer's, by `username`), each with its `userId` and `username`. ledger-api lists it only for tokens with the admin role and `admin:read`, so the agent offers it whenever `tools/list` returns it and never decides who is an admin itself. Only then does the prompt get an admin paragraph, so customers' prompts are unchanged.
 
 `get_transaction`, `update_transaction` and `delete_transaction` are filtered out, so Claude can't change or delete existing transactions, even an admin's; ledger-api has no admin edit or delete tools over MCP either. New expenses are always recorded in the signed-in customer's own ledger. The customer fixes a wrong record in the UI over REST.

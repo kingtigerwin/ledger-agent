@@ -121,6 +121,7 @@ def create_handler(deps: Deps) -> Callable[[Event], Awaitable[Response]]:
                 "transactions": len(result.transactions),
                 "listed": len(result.listed),
                 "summaries": len(result.summaries),
+                "purchases": len(result.purchases),
             },
         )
         return _json(
@@ -130,6 +131,7 @@ def create_handler(deps: Deps) -> Callable[[Event], Awaitable[Response]]:
                 "transactions": result.transactions,
                 "listed": result.listed,
                 "summaries": result.summaries,
+                "purchases": result.purchases,
             },
         )
 

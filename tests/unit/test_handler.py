@@ -166,6 +166,7 @@ class TestGivenAMessageDescribingAnExpense:
             "transactions": [COFFEE_STORED],
             "listed": [],
             "summaries": [],
+            "purchases": [],
         }
 
     async def test_it_talks_to_the_ledger_with_the_customers_token(self, response: Any) -> None:
@@ -203,6 +204,21 @@ class TestGivenAQuestionAboutPastSpending:
         assert body["transactions"] == []
         assert body["listed"] == [COFFEE_STORED]
         assert body["summaries"] == [summary]
+
+
+class TestGivenAQuestionAboutSomethingBought:
+    async def test_it_returns_the_matches_as_data(self) -> None:
+        found: dict[str, Any] = {"matches": [], "count": 0, "totalCents": 0}
+        search = tool_use("t1", "search_purchases", {"terms": ["banana"]})
+        harness = Harness(
+            FakeModel(message(search, stop_reason="tool_use"), message(text("None yet."))),
+            FakeLedger({"search_purchases": stored(**found)}),
+        )
+
+        status, body = await harness.post()
+
+        assert status == 200
+        assert body["purchases"] == [found]
 
 
 class TestGivenNoBearerToken:
