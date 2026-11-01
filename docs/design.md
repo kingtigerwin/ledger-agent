@@ -37,6 +37,24 @@ Chat is for what the customer types: recording and questions about their own spe
 
 If duplicates become a problem, the fix is in ledger-api: let `create_transaction` accept an optional client ULID `id`, as the REST create route already does.
 
+## Flow: reading a receipt
+
+`POST /agent/v1/receipts/read` reads a photo of a receipt. It's one Claude call with structured output and no tools, so text in a photo can't make anything happen. It saves nothing: the UI records the result with ledger-api's `POST /transactions` and an ID it generates, so a retry can't record it twice, which `create_transaction` can't promise. The photo is never stored or logged, and goes no further than Claude; the customer's photos going to Anthropic is the one privacy cost of this. Claude is told not to return card numbers, loyalty numbers or staff names.
+
+Claude copies what's printed and code does the rest (`receipts.py`): it parses the date day first (these are Australian receipts, so 01/11/2026 is 1 November), and does the sums, since a misread amount rarely leaves both the lines and the payments matching the total. Each failed check adds a code to `problems`, and `canRecord` is true only when there are none. The UI records a receipt that can be recorded, and shows the customer a form for one that can't.
+
+| Problem | Means |
+|---|---|
+| `merchant_unreadable` | No merchant name |
+| `date_unreadable`, `date_in_future`, `date_too_old` | No valid date, a date after today in the customer's time zone, or one over a year old |
+| `lines_dont_add_up` | The lines don't sum to the total |
+| `payments_dont_add_up` | The payments don't sum to the total, so `paidCents` falls back to the total |
+| `nothing_paid` | It was all paid with points, so there's no money to record (ledger-api needs an amount above zero) |
+
+`paidCents` is the money paid, and it's what the transaction records, so spend matches the customer's bank; `totalCents` is the goods' value. A $30.50 shop with $30.00 of Flybuys points records $0.50. Each line has `name` as printed and `product` in plain words (`CLS CHKN DRUMSTICKS` is `chicken drumsticks`), for a future search of what was bought; photos aren't kept, so that can't be added afterwards from the photo.
+
+The four sample receipts in the design discussion were all read correctly on `claude-haiku-5-5` at `low` effort, at $0.0004 to $0.0011 each and 2 to 7 seconds. That's only four fairly clear photos, which is why the checks decide and Claude doesn't.
+
 ## API
 
 All under `/agent/v1`, all requiring the bearer token.
@@ -68,6 +86,26 @@ For "how much have I spent this month?", `transactions` and `listed` are empty a
 - No server-side conversation state: the UI sends the whole history (user and assistant text only) every turn and appends the reply. Limits on message count and length keep requests, and Claude spend, bounded.
 - `timeZone` is an IANA name; the agent puts today's date in that zone into the prompt so "today" and "yesterday" resolve to real dates.
 
+`POST /receipts/read`
+```json
+{ "image": "<base64>", "mediaType": "image/jpeg", "timeZone": "Australia/Melbourne" }
+```
+→ 200
+```json
+{
+  "receipt": {
+    "merchant": "Coles", "date": "2026-11-01", "category": "groceries", "paidCents": 50, "totalCents": 3050,
+    "gstCents": 0, "savingsCents": 3100, "time": "15:06", "location": "The Glen", "receiptNumber": "6547",
+    "abn": "45004189708",
+    "lines": [{ "name": "CLS CHICKEN MINCE", "product": "chicken mince", "amountCents": 650 }],
+    "payments": [{ "label": "EFT", "kind": "money", "amountCents": 50 }]
+  },
+  "problems": [],
+  "canRecord": true
+}
+```
+It answers 413 `image_too_large` over about 1.1 MB, and 422 `not_a_receipt`, `unreadable` or `receipt_too_long`, each with a message for the customer. PDFs aren't accepted.
+
 Errors follow ledger-api's convention: `{ "error": { "code", "message" } }`. A customer past their daily limit gets 429 `daily_limit_reached`, and past the total for everyone, 429 `daily_total_reached`.
 
 ## Prompt rules
@@ -81,6 +119,8 @@ Errors follow ledger-api's convention: `{ "error": { "code", "message" } }`. A c
 ## Limits and cost
 
 - The AWS side stays within the free tier (Lambda, HTTP API, one SSM standard parameter). **Claude calls are the one thing that costs money**; they are bounded by: rejecting bad tokens before calling Claude, a daily limit per customer and a daily total across everyone, HTTP API stage throttling, request size limits, a cap on tool-use rounds per turn, and a low `max_tokens`.
+- Each customer also gets 10 receipts a day, counted separately from messages, since one shop can leave several and each is a single small call; each receipt also counts towards the daily total. A receipt is counted after the token check and before Claude, so one that can't be read still counts.
+- Claude's output for a receipt is capped at 4,500 tokens, about 50 lines: more wouldn't finish inside the Lambda's 28 seconds. A longer one gets 422 `receipt_too_long`.
 - Each customer, admins included, gets 5 messages a day, reset at midnight Sydney time (one zone for everyone, since the UI supplies the customer's own, and changing it could buy extra days). A message is counted straight after the token check and before any Claude call, whatever happens to it next, with one conditional write to the `Usage` table, so messages sent together can't pass the limit and a failure to count stops the turn. Past the limit the agent answers 429 `daily_limit_reached` and calls nothing. The user comes from the token's `sub`, read only once ledger-api has accepted that token. Everyone together gets 300 messages a day, for the same day: anyone can join with a Google account, so this is what many accounts together run into. Past it the agent answers 429 `daily_total_reached`, and the warning log `daily_total_reached` marks the day. It is counted after the customer's own limit, so a customer already past theirs can't use it up with refused messages; a message refused by the total still counts towards the customer's own limit. The deploy smoke test's `agent-e2e` user (`smokeTestUserId` in `cdk.json`) is exempt: it sends two messages per deploy, so a third deploy in a day would fail its smoke test, and it isn't counted towards the total either. Items expire through DynamoDB TTL. The table is provisioned at 1 read and 4 writes a second, inside the always-free 25 units; on-demand isn't covered by them.
 - HTTP API's 30-second integration timeout bounds each turn (the Lambda stops at 28 seconds); a turn is typically one or two Claude calls and at most a couple of MCP calls, and at most 4 Claude calls.
 - Requests: at most 20 messages of at most 2,000 characters each, and the last one must be the customer's. The stage is throttled to 2 requests per second with bursts of 5.

@@ -10,7 +10,7 @@ import pytest
 from ledger_agent.agent import ModelUnavailable
 from ledger_agent.handler import MAX_CONTENT_LENGTH, MAX_MESSAGES, Deps, create_handler
 from ledger_agent.ledger import Ledger, LedgerUnavailable
-from ledger_agent.usage import DailyLimitReached, DailyTotalReached
+from ledger_agent.usage import DailyLimitReached, DailyReceiptLimitReached, DailyTotalReached
 
 from .fakes import FakeLedger, FakeModel, message, stored, text, tool_use
 
@@ -29,6 +29,8 @@ class Harness:
         self.tokens: list[str] = []
         self.counted: list[tuple[str, datetime]] = []
         self.allowance_left = True
+        self.receipts_left = True
+        self.receipts_counted: list[tuple[str, datetime]] = []
         self.total_left = True
 
         @asynccontextmanager
@@ -43,12 +45,30 @@ class Harness:
                 raise DailyTotalReached
             self.counted.append((user_id, now))
 
+        def count_receipt(user_id: str, now: datetime) -> None:
+            if not self.receipts_left:
+                raise DailyReceiptLimitReached
+            if not self.total_left:
+                raise DailyTotalReached
+            self.receipts_counted.append((user_id, now))
+
         self.handle = create_handler(
-            Deps(model=self.model, connect=connect, now=lambda: NOW, count_message=count_message)
+            Deps(
+                model=self.model,
+                connect=connect,
+                now=lambda: NOW,
+                count_message=count_message,
+                count_receipt=count_receipt,
+            )
         )
 
     async def post(
-        self, body: Any = None, *, authorization: str | None = f"Bearer {ALICE_TOKEN}", raw: str | None = None
+        self,
+        body: Any = None,
+        *,
+        authorization: str | None = f"Bearer {ALICE_TOKEN}",
+        raw: str | None = None,
+        route: str = "POST /agent/v1/chat",
     ) -> tuple[int, dict[str, Any]]:
         if body is None:
             body = {"messages": [STARBUCKS], "timeZone": "Australia/Sydney"}
@@ -56,7 +76,7 @@ class Harness:
         if authorization is not None:
             headers["authorization"] = authorization
         event = {
-            "routeKey": "POST /agent/v1/chat",
+            "routeKey": route,
             "headers": headers,
             "body": raw if raw is not None else json.dumps(body),
             "isBase64Encoded": False,

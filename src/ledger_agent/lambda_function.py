@@ -11,7 +11,7 @@ from .agent import Claude
 from .config import LEDGER_MCP_URL, SMOKE_TEST_USER_ID, anthropic_api_key, usage_table
 from .handler import Deps, create_handler
 from .mcp_ledger import connect
-from .usage import count_message
+from .usage import count_message, count_receipt
 
 logging.getLogger("ledger_agent").setLevel(logging.INFO)
 
@@ -25,6 +25,7 @@ _handle = create_handler(
         connect=lambda token: connect(LEDGER_MCP_URL, token),
         now=lambda: datetime.now(UTC),
         count_message=lambda user_id, now: count_message(_usage, user_id, now, exempt=SMOKE_TEST_USER_ID),
+        count_receipt=lambda user_id, now: count_receipt(_usage, user_id, now, exempt=SMOKE_TEST_USER_ID),
     )
 )
 
