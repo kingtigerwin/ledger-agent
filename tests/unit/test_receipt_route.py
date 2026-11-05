@@ -10,7 +10,7 @@ from ledger_agent.receipts import Reading
 
 from .fakes import FakeLedger, FakeModel, message, text
 from .test_handler import ALICE_TOKEN, NOW, Harness, error_code
-from .test_receipts import IMAGE, reading
+from .test_receipts import IMAGE, bill, reading
 
 ROUTE = "POST /agent/v1/receipts/read"
 BODY = {"image": IMAGE, "mediaType": "image/jpeg", "timeZone": "Australia/Melbourne"}
@@ -39,6 +39,7 @@ class TestGivenAPhotoOfAReceipt:
         status, body = await read(harness())
 
         assert status == 200
+        assert body["kind"] == "receipt"
         assert body["canRecord"] is True
         assert body["problems"] == []
         assert body["receipt"]["paidCents"] == 50
@@ -66,6 +67,30 @@ class TestGivenAPhotoOfAReceipt:
         assert body["problems"] == []
 
 
+class TestGivenAPhotoOfABill:
+    async def test_returns_what_is_due_for_the_customer_to_say_whether_they_paid(self) -> None:
+        status, body = await read(harness(message(text(bill().model_dump_json()))))
+
+        assert status == 200
+        assert body == {
+            "kind": "bill",
+            "bill": {
+                "biller": "Whitehorse City Council",
+                "item": "council rates",
+                "category": "utilities",
+                "amountCents": 58300,
+                "dueDate": "2026-11-30",
+            },
+        }
+
+    async def test_counts_it_as_a_receipt(self) -> None:
+        h = harness(message(text(bill().model_dump_json())))
+
+        await read(h)
+
+        assert h.receipts_counted == [("alice", NOW)]
+
+
 class TestGivenATokenTheLedgerRejects:
     async def test_refuses_before_counting_or_calling_claude(self) -> None:
         h = harness(ledger=FakeLedger(authorized=False))
@@ -88,7 +113,7 @@ class TestGivenThePhotoCannotBeUsed:
     @pytest.mark.parametrize(
         ("fields", "code"),
         [
-            pytest.param({"isReceipt": False}, "not_a_receipt", id="not-a-receipt"),
+            pytest.param({"kind": "other"}, "not_a_receipt", id="not-a-receipt"),
             pytest.param({"readable": False}, "unreadable", id="unreadable"),
         ],
     )

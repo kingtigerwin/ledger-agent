@@ -54,6 +54,10 @@ Claude copies what's printed and code does the rest (`receipts.py`): it parses t
 
 `paidCents` is the money paid, and it's what the transaction records, so spend matches the customer's bank; `totalCents` is the goods' value. A $30.50 shop with $30.00 of Flybuys points records $0.50. Each line has `name` as printed and `product` in plain words (`CLS CHKN DRUMSTICKS` is `chicken drumsticks`), for a future search of what was bought; photos aren't kept, so that can't be added afterwards from the photo.
 
+### Bills
+
+A photo of a bill (council rates, electricity, phone, rego and so on) isn't refused: Claude says which of `receipt`, `bill` or `other` the photo is, and only `other` gets 422 `not_a_receipt`. A bill asks for money rather than showing it was paid, so nothing is checked or recorded from it here. The response carries who sent it, what it's for in plain words (`item`, so a rego bill is found by ledger-api's `rego_due` insight), the amount due on this notice and the due date, and the UI asks the customer whether they've paid it. Only a yes records it, dated the day they say so, since the bill can't say when it was paid. Claude is told not to return a bill's names, addresses, account or reference numbers, and there's nowhere in the output to put them.
+
 The four sample receipts in the design discussion were all read correctly on `claude-haiku-5-5` at `low` effort, at $0.0004 to $0.0011 each and 2 to 7 seconds. That's only four fairly clear photos, which is why the checks decide and Claude doesn't.
 
 ## API
@@ -94,6 +98,7 @@ For "how much have I spent this month?", `transactions` and `listed` are empty a
 → 200
 ```json
 {
+  "kind": "receipt",
   "receipt": {
     "merchant": "Coles", "date": "2026-11-01", "category": "groceries", "paidCents": 50, "totalCents": 3050,
     "gstCents": 0, "savingsCents": 3100, "time": "15:06", "location": "The Glen", "receiptNumber": "6547",
@@ -105,7 +110,17 @@ For "how much have I spent this month?", `transactions` and `listed` are empty a
   "canRecord": true
 }
 ```
-It answers 413 `image_too_large` over about 1.1 MB, and 422 `not_a_receipt`, `unreadable` or `receipt_too_long`, each with a message for the customer. PDFs aren't accepted.
+or, for a bill (`dueDate` and either text may be `null`):
+```json
+{
+  "kind": "bill",
+  "bill": {
+    "biller": "Whitehorse City Council", "item": "council rates", "category": "utilities", "amountCents": 58300,
+    "dueDate": "2026-11-30"
+  }
+}
+```
+It answers 413 `image_too_large` over about 1.1 MB, and 422 `not_a_receipt` (neither a receipt nor a bill), `unreadable` or `receipt_too_long`, each with a message for the customer. PDFs aren't accepted.
 
 Errors follow ledger-api's convention: `{ "error": { "code", "message" } }`. A customer past their daily limit gets 429 `daily_limit_reached`, and past the total for everyone, 429 `daily_total_reached`.
 

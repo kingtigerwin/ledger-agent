@@ -9,6 +9,7 @@ from ledger_agent.receipts import (
     Problem,
     Reading,
     ReceiptNotRead,
+    bill_from,
     check_receipt,
     read_receipt,
 )
@@ -22,7 +23,7 @@ def reading(**fields: Any) -> Reading:
     """The Flybuys receipt, as Claude reads it."""
     return Reading.model_validate(
         {
-            "isReceipt": True,
+            "kind": "receipt",
             "readable": True,
             "merchant": "Coles",
             "location": "The Glen",
@@ -30,6 +31,8 @@ def reading(**fields: Any) -> Reading:
             "receiptNumber": "6547",
             "printedDate": "01/11/2026",
             "printedTime": "15:06",
+            "printedDueDate": None,
+            "billFor": None,
             "category": "groceries",
             "totalCents": 3050,
             "gstCents": 0,
@@ -176,6 +179,53 @@ class TestGivenNoMerchant:
         assert problems(merchant=None) == ["merchant_unreadable"]
 
 
+def bill(**fields: Any) -> Reading:
+    """A council rates notice, as Claude reads it."""
+    return reading(
+        **{
+            "kind": "bill",
+            "merchant": "Whitehorse City Council",
+            "location": None,
+            "abn": "39549568822",
+            "receiptNumber": None,
+            "printedDate": None,
+            "printedTime": None,
+            "printedDueDate": "30 November 2026",
+            "billFor": "council rates",
+            "category": "utilities",
+            "totalCents": 58300,
+            "gstCents": None,
+            "savingsCents": None,
+            "payments": [],
+            "lines": [],
+            **fields,
+        }
+    )
+
+
+class TestGivenABill:
+    def test_it_is_what_is_due_and_who_to(self) -> None:
+        assert bill_from(bill()) == {
+            "biller": "Whitehorse City Council",
+            "item": "council rates",
+            "category": "utilities",
+            "amountCents": 58300,
+            "dueDate": "2026-11-30",
+        }
+
+    def test_a_due_date_that_cannot_be_read_is_left_out(self) -> None:
+        assert bill_from(bill(printedDueDate="soon"))["dueDate"] is None
+
+    @pytest.mark.parametrize("field", ["merchant", "billFor"])
+    def test_blank_text_is_left_out(self, field: str) -> None:
+        assert None in bill_from(bill(**{field: " "})).values()
+
+    def test_long_text_is_cut_to_what_ledger_api_accepts(self) -> None:
+        read = bill_from(bill(merchant="X" * 300, billFor="y" * 300))
+
+        assert (len(read["biller"] or ""), len(read["item"] or "")) == (100, 100)
+
+
 class TestWhatItKeeps:
     def test_an_abn_is_digits_only(self) -> None:
         assert check_receipt(reading(abn="45 004 189 708"), TODAY)["receipt"]["abn"] == "45004189708"
@@ -224,8 +274,21 @@ class TestReadReceipt:
 
         assert read.total_cents == 3050
 
+    async def test_returns_a_bill_rather_than_refusing_it(self) -> None:
+        read = await read_receipt(FakeModel(message(text(bill().model_dump_json()))), IMAGE, "image/jpeg")
+
+        assert (read.kind, read.total_cents) == ("bill", 58300)
+
+    async def test_a_bill_with_no_readable_amount_is_unreadable(self) -> None:
+        answer = bill(totalCents=None).model_dump_json()
+
+        with pytest.raises(ReceiptNotRead) as caught:
+            await read_receipt(FakeModel(message(text(answer))), IMAGE, "image/jpeg")
+
+        assert caught.value.code == "unreadable"
+
     async def test_a_photo_of_something_else_is_not_a_receipt(self) -> None:
-        answer = reading(isReceipt=False).model_dump_json()
+        answer = reading(kind="other").model_dump_json()
 
         with pytest.raises(ReceiptNotRead) as caught:
             await read_receipt(FakeModel(message(text(answer))), IMAGE, "image/jpeg")
