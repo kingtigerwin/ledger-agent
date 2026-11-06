@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from .agent import ChatMessage, Model, ModelUnavailable, run_turn
 from .clock import InvalidTimeZone, today_in
 from .ledger import Ledger, LedgerUnavailable, Unauthorized
-from .receipts import MediaType, ReceiptNotRead, check_receipt, read_receipt
+from .receipts import MediaType, ReceiptNotRead, bill_from, check_receipt, read_receipt
 from .usage import (
     DAILY_MESSAGE_LIMIT,
     DAILY_RECEIPT_LIMIT,
@@ -35,7 +35,7 @@ MAX_IMAGE_LENGTH = 1_500_000
 READ_RECEIPT_ROUTE = "POST /agent/v1/receipts/read"
 
 _NOT_READ = {
-    "not_a_receipt": "That doesn't look like a receipt. Try another photo.",
+    "not_a_receipt": "That doesn't look like a receipt or a bill. Try another photo.",
     "unreadable": "That receipt couldn't be read. Try a clearer photo in good light.",
     "receipt_too_long": "That receipt is too long to read in one go. You can add it in the chat instead.",
 }
@@ -136,7 +136,10 @@ def create_handler(deps: Deps) -> Callable[[Event], Awaitable[Response]]:
         )
 
     async def read_a_receipt(event: Event) -> Response:
-        """Saves nothing: the UI records the result, or asks the customer to look at it first."""
+        """
+        Saves nothing: the UI records a receipt, or asks the customer to look at it first, and asks whether a
+        bill has been paid.
+        """
         token = _bearer_token(event)
         request = _parse(event, _ReceiptRequest)
         if len(request.image) > MAX_IMAGE_LENGTH:
@@ -146,9 +149,13 @@ def create_handler(deps: Deps) -> Callable[[Event], Awaitable[Response]]:
         async with deps.connect(token) as ledger:
             await ledger.list_tools()
         deps.count_receipt(user_id_from(token), deps.now())
-        checked = check_receipt(await read_receipt(deps.model, request.image, request.media_type), today)
+        reading = await read_receipt(deps.model, request.image, request.media_type)
+        if reading.kind == "bill":
+            log.info("bill_read")
+            return _json(200, {"kind": "bill", "bill": dict(bill_from(reading))})
+        checked = check_receipt(reading, today)
         log.info("receipt_read", extra={"problems": checked["problems"], "lines": len(checked["receipt"]["lines"])})
-        return _json(200, dict(checked))
+        return _json(200, {"kind": "receipt", **checked})
 
     async def handle(event: Event) -> Response:
         try:
