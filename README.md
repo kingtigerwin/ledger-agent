@@ -29,6 +29,8 @@ GitHub Actions deploys `main` using GitHub's OIDC login, so no AWS keys are stor
    uv run python scripts/smoke.py   # first run registers agent-e2e and approves it with ledger-api's admin password
    ```
 
+   Set `smokeTestUserId` in `cdk.json` to `agent-e2e`'s user ID, so its messages aren't counted. Don't delete `agent-e2e` from ledger-ui's admin page: the next deploy would register it again as pending, and its smoke test fails, since the deploy role can't read the admin password to approve it. If it does get deleted, run the smoke test locally once, as above, and update `smokeTestUserId`.
+
    Note the `DeployRoleArn` output.
 
 2. In the GitHub repo's **Settings → Secrets and variables → Actions**, add:
