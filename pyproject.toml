@@ -8,6 +8,7 @@ dependencies = [
     "boto3>=1.43.119",
     "mcp>=2.3.0",
     "pydantic>=2.14.1",
+    "pypdf>=6.21.4",
     "tzdata>=2026.5",
 ]
 
