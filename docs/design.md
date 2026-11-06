@@ -40,7 +40,7 @@ If duplicates become a problem, the fix is in ledger-api: let `create_transactio
 
 ## Flow: reading a receipt
 
-`POST /agent/v1/receipts/read` reads a photo of a receipt. It's one Claude call with structured output and no tools, so text in a photo can't make anything happen. It saves nothing: the UI records the result with ledger-api's `POST /transactions` and an ID it generates, so a retry can't record it twice, which `create_transaction` can't promise. The photo is never stored or logged, and goes no further than Claude; the customer's photos going to Anthropic is the one privacy cost of this. Claude is told not to return card numbers, loyalty numbers or staff names.
+`POST /agent/v1/receipts/read` reads a photo or PDF of a receipt. It's one Claude call with structured output and no tools, so text in a photo or PDF can't make anything happen. It saves nothing: the UI records the result with ledger-api's `POST /transactions` and an ID it generates, so a retry can't record it twice, which `create_transaction` can't promise. The photo or PDF is never stored or logged, and goes no further than Claude; the customer's photos and PDFs going to Anthropic is the one privacy cost of this. Claude is told not to return card numbers, loyalty numbers or staff names.
 
 Claude copies what's printed and code does the rest (`receipts.py`): it parses the date day first (these are Australian receipts, so 01/11/2026 is 1 November), and does the sums, since a misread amount rarely leaves both the lines and the payments matching the total. Each failed check adds a code to `problems`, and `canRecord` is true only when there are none. The UI records a receipt that can be recorded, and shows the customer a form for one that can't.
 
@@ -53,6 +53,10 @@ Claude copies what's printed and code does the rest (`receipts.py`): it parses t
 | `nothing_paid` | It was all paid with points, so there's no money to record (ledger-api needs an amount above zero) |
 
 `paidCents` is the money paid, and it's what the transaction records, so spend matches the customer's bank; `totalCents` is the goods' value. A $30.50 shop with $30.00 of Flybuys points records $0.50. Each line has `name` as printed and `product` in plain words (`CLS CHKN DRUMSTICKS` is `chicken drumsticks`), for a future search of what was bought; photos aren't kept, so that can't be added afterwards from the photo.
+
+### PDFs
+
+A PDF goes to Claude as a `document` block, which reads each page as text and as an image, so an emailed e-receipt and a scanned bill both work, and the rest (classification, checks, bills) is the same as for a photo. The browser can't shrink a PDF, so it has its own size limit of about 3 MB. Before Claude, `pypdf` opens it: more than 5 pages gets 422 `too_many_pages`, since a page costs about as much as a photo and a long statement wouldn't finish inside the Lambda's 28 seconds, and a password-protected or broken one gets 422 `pdf_unreadable`, which Claude would otherwise refuse with an error that reads as the assistant being down. Neither is counted against the customer's scans; the token is still checked first.
 
 ### Bills
 
@@ -120,7 +124,7 @@ or, for a bill (`dueDate` and either text may be `null`):
   }
 }
 ```
-It answers 413 `image_too_large` over about 1.1 MB, and 422 `not_a_receipt` (neither a receipt nor a bill), `unreadable` or `receipt_too_long`, each with a message for the customer. PDFs aren't accepted.
+`mediaType` is `image/jpeg`, `image/png`, `image/webp` or `application/pdf`. It answers 413 `image_too_large` over about 1.1 MB for a photo or 3 MB for a PDF, and 422 `not_a_receipt` (neither a receipt nor a bill), `unreadable`, `receipt_too_long`, `too_many_pages` or `pdf_unreadable`, each with a message for the customer.
 
 Errors follow ledger-api's convention: `{ "error": { "code", "message" } }`. A customer past their daily limit gets 429 `daily_limit_reached`, and past the total for everyone, 429 `daily_total_reached`.
 

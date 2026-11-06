@@ -1,16 +1,17 @@
+import base64
 import json
 from typing import Any
 
 import pytest
 
 from ledger_agent.agent import ModelUnavailable
-from ledger_agent.handler import MAX_IMAGE_LENGTH
+from ledger_agent.handler import MAX_IMAGE_LENGTH, MAX_PDF_LENGTH
 from ledger_agent.ledger import LedgerUnavailable, ToolSpec
 from ledger_agent.receipts import Reading
 
 from .fakes import FakeLedger, FakeModel, message, text
 from .test_handler import ALICE_TOKEN, NOW, Harness, error_code
-from .test_receipts import IMAGE, bill, reading
+from .test_receipts import IMAGE, bill, pdf, reading
 
 ROUTE = "POST /agent/v1/receipts/read"
 BODY = {"image": IMAGE, "mediaType": "image/jpeg", "timeZone": "Australia/Melbourne"}
@@ -91,6 +92,56 @@ class TestGivenAPhotoOfABill:
         assert h.receipts_counted == [("alice", NOW)]
 
 
+class TestGivenAPdf:
+    async def test_reads_it_as_a_document(self) -> None:
+        h = harness(message(text(bill().model_dump_json())))
+
+        status, body = await read(h, {**BODY, "image": pdf(2), "mediaType": "application/pdf"})
+
+        assert (status, body["kind"]) == (200, "bill")
+        assert h.model.requests[0]["messages"][0]["content"][0]["type"] == "document"
+
+    async def test_refuses_one_with_too_many_pages_without_calling_claude_or_counting_it(self) -> None:
+        h = harness()
+
+        status, body = await read(h, {**BODY, "image": pdf(6), "mediaType": "application/pdf"})
+
+        assert (status, error_code(body)) == (422, "too_many_pages")
+        assert h.model.requests == []
+        assert h.receipts_counted == []
+
+    async def test_refuses_one_that_cannot_be_opened(self) -> None:
+        h = harness()
+
+        status, body = await read(h, {**BODY, "image": pdf(password="secret"), "mediaType": "application/pdf"})
+
+        assert (status, error_code(body)) == (422, "pdf_unreadable")
+        assert h.model.requests == []
+
+    async def test_still_checks_the_token_first(self) -> None:
+        h = harness(ledger=FakeLedger(authorized=False))
+
+        status, _ = await read(h, {**BODY, "image": pdf(6), "mediaType": "application/pdf"})
+
+        assert status == 401
+
+    async def test_allows_a_pdf_bigger_than_a_photo_may_be(self) -> None:
+        # Padding after %%EOF is ignored by PDF readers, so this is still a one-page PDF.
+        padded = base64.b64encode(base64.b64decode(pdf()) + b" " * (MAX_IMAGE_LENGTH * 3 // 4)).decode()
+
+        status, _ = await read(harness(), {**BODY, "image": padded, "mediaType": "application/pdf"})
+
+        assert status == 200
+
+    async def test_refuses_one_over_its_own_limit(self) -> None:
+        h = harness()
+
+        status, body = await read(h, {**BODY, "image": "A" * (MAX_PDF_LENGTH + 4), "mediaType": "application/pdf"})
+
+        assert (status, error_code(body)) == (413, "image_too_large")
+        assert h.model.requests == []
+
+
 class TestGivenATokenTheLedgerRejects:
     async def test_refuses_before_counting_or_calling_claude(self) -> None:
         h = harness(ledger=FakeLedger(authorized=False))
@@ -146,7 +197,7 @@ class TestGivenABadRequest:
     @pytest.mark.parametrize(
         ("body", "code"),
         [
-            pytest.param({**BODY, "mediaType": "application/pdf"}, "validation_failed", id="a-pdf"),
+            pytest.param({**BODY, "mediaType": "image/heic"}, "validation_failed", id="a-heic"),
             pytest.param({"mediaType": "image/jpeg", "timeZone": "UTC"}, "validation_failed", id="no-image"),
             pytest.param({**BODY, "image": "not base64!"}, "validation_failed", id="not-base64"),
             pytest.param({**BODY, "timeZone": "Mars/Base"}, "invalid_time_zone", id="unknown-time-zone"),

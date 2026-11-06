@@ -1,15 +1,20 @@
+import base64
 from datetime import date
+from io import BytesIO
 from typing import Any
 
 import pytest
+from pypdf import PdfWriter
 
 from ledger_agent.agent import MODEL_ID, ModelUnavailable
 from ledger_agent.receipts import (
+    MAX_PDF_PAGES,
     MAX_TOKENS,
     Problem,
     Reading,
     ReceiptNotRead,
     bill_from,
+    check_pdf,
     check_receipt,
     read_receipt,
 )
@@ -255,6 +260,46 @@ READING_JSON = reading().model_dump_json()
 IMAGE = "aW1hZ2U="
 
 
+def pdf_bytes(pages: int = 1, password: str | None = None) -> bytes:
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=200, height=200)
+    if password:
+        writer.encrypt(password)
+    out = BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def pdf(pages: int = 1, password: str | None = None) -> str:
+    return base64.b64encode(pdf_bytes(pages, password)).decode()
+
+
+class TestCheckPdf:
+    def test_a_short_pdf_is_fine(self) -> None:
+        check_pdf(pdf_bytes(MAX_PDF_PAGES))
+
+    def test_too_many_pages_say_so(self) -> None:
+        with pytest.raises(ReceiptNotRead) as caught:
+            check_pdf(pdf_bytes(MAX_PDF_PAGES + 1))
+
+        assert caught.value.code == "too_many_pages"
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            pytest.param(pdf_bytes(password="secret"), id="password-protected"),
+            pytest.param(b"%PDF-1.7 not really", id="corrupt"),
+            pytest.param(b"image", id="not-a-pdf"),
+        ],
+    )
+    def test_one_that_cannot_be_opened_says_so(self, data: bytes) -> None:
+        with pytest.raises(ReceiptNotRead) as caught:
+            check_pdf(data)
+
+        assert caught.value.code == "pdf_unreadable"
+
+
 class TestReadReceipt:
     async def test_sends_the_image_to_claude_with_no_tools(self) -> None:
         model = FakeModel(message(text(READING_JSON)))
@@ -268,6 +313,18 @@ class TestReadReceipt:
         assert request["output_config"]["format"]["type"] == "json_schema"
         image = request["messages"][0]["content"][0]
         assert image["source"] == {"type": "base64", "media_type": "image/jpeg", "data": IMAGE}
+
+    async def test_sends_a_pdf_as_a_document(self) -> None:
+        model = FakeModel(message(text(READING_JSON)))
+        document = pdf()
+
+        await read_receipt(model, document, "application/pdf")
+
+        block = model.requests[0]["messages"][0]["content"][0]
+        assert block == {
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": document},
+        }
 
     async def test_returns_what_claude_read(self) -> None:
         read = await read_receipt(FakeModel(message(text(READING_JSON))), IMAGE, "image/jpeg")

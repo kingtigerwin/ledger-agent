@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from .agent import ChatMessage, Model, ModelUnavailable, run_turn
 from .clock import InvalidTimeZone, today_in
 from .ledger import Ledger, LedgerUnavailable, Unauthorized
-from .receipts import MediaType, ReceiptNotRead, bill_from, check_receipt, read_receipt
+from .receipts import MAX_PDF_PAGES, MediaType, ReceiptNotRead, bill_from, check_pdf, check_receipt, read_receipt
 from .usage import (
     DAILY_MESSAGE_LIMIT,
     DAILY_RECEIPT_LIMIT,
@@ -31,6 +31,8 @@ MAX_CONTENT_LENGTH = 2000
 # Base64 characters, about 1.1 MB of image: a receipt shrunk in the browser is far smaller, and this stays well
 # inside Lambda's 6 MB request limit.
 MAX_IMAGE_LENGTH = 1_500_000
+# About 3 MB: a PDF isn't shrunk in the browser, and a scanned one can be large. Still inside Lambda's 6 MB.
+MAX_PDF_LENGTH = 4_000_000
 
 READ_RECEIPT_ROUTE = "POST /agent/v1/receipts/read"
 
@@ -38,6 +40,8 @@ _NOT_READ = {
     "not_a_receipt": "That doesn't look like a receipt or a bill. Try another photo.",
     "unreadable": "That receipt couldn't be read. Try a clearer photo in good light.",
     "receipt_too_long": "That receipt is too long to read in one go. You can add it in the chat instead.",
+    "too_many_pages": f"That PDF has more than {MAX_PDF_PAGES} pages. Try one with just the bill or receipt.",
+    "pdf_unreadable": "That PDF couldn't be opened. If it has a password, try a screenshot of it instead.",
 }
 
 log = logging.getLogger("ledger_agent")
@@ -87,7 +91,7 @@ class _ReceiptRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     image: str = Field(min_length=1)
-    # Photos only. The browser re-encodes them as JPEG; the others are for a client that doesn't.
+    # A photo or a PDF. The browser re-encodes photos as JPEG; the other image types are for a client that doesn't.
     media_type: MediaType = Field(alias="mediaType")
     time_zone: str = Field(alias="timeZone")
 
@@ -142,12 +146,18 @@ def create_handler(deps: Deps) -> Callable[[Event], Awaitable[Response]]:
         """
         token = _bearer_token(event)
         request = _parse(event, _ReceiptRequest)
-        if len(request.image) > MAX_IMAGE_LENGTH:
-            raise ApiError(413, "image_too_large", "That photo is too large; try a smaller one.")
+        is_pdf = request.media_type == "application/pdf"
+        if len(request.image) > (MAX_PDF_LENGTH if is_pdf else MAX_IMAGE_LENGTH):
+            raise ApiError(
+                413, "image_too_large", f"That {'PDF' if is_pdf else 'photo'} is too large; try a smaller one."
+            )
         today = _today(request.time_zone, deps.now())
         # Only real customers are counted, and only they cost a Claude call.
         async with deps.connect(token) as ledger:
             await ledger.list_tools()
+        # A PDF that can't be read isn't counted against the customer's scans.
+        if is_pdf:
+            check_pdf(base64.b64decode(request.image))
         deps.count_receipt(user_id_from(token), deps.now())
         reading = await read_receipt(deps.model, request.image, request.media_type)
         if reading.kind == "bill":
