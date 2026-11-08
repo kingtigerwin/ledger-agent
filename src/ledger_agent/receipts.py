@@ -40,7 +40,9 @@ _MAX_SHORT_TEXT = 100
 _OLDEST_DAYS = 366
 
 _NUMERIC_DATE = re.compile(r"^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})$")
-_NAMED_DATE = re.compile(r"^(\d{1,2})\s+([a-z]{3})[a-z]*\.?,?\s+(\d{4}|\d{2})$", re.IGNORECASE)
+# TopTea prints "Sun 08 Nov.2026": a weekday first, and no space after the month's dot.
+_WEEKDAY = re.compile(r"^(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s+", re.IGNORECASE)
+_NAMED_DATE = re.compile(r"^(\d{1,2})\s+([a-z]{3})[a-z]*\.?,?\s*(\d{4}|\d{2})$", re.IGNORECASE)
 _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 _TIME = re.compile(r"^(\d{1,2}):(\d{2})(?::\d{2})?\s*(?:([ap])\.?m?\.?)?$", re.IGNORECASE)
 
@@ -312,7 +314,7 @@ async def read_receipt(model: Model, image: str, media_type: MediaType) -> Readi
 
 def _parsed_date(printed: str | None) -> date | None:
     """Day first, always: these are Australian receipts, so 01/11/2026 is 1 November."""
-    text = (printed or "").strip()
+    text = _WEEKDAY.sub("", (printed or "").strip())
     numeric = _NUMERIC_DATE.match(text)
     named = _NAMED_DATE.match(text)
     if numeric:

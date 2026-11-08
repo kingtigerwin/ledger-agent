@@ -95,6 +95,10 @@ class TestDates:
             pytest.param("01.11.26", "2026-11-01", id="dots"),
             pytest.param("1 Nov 2026", "2026-11-01", id="month-name"),
             pytest.param("1 November 2026", "2026-11-01", id="long-month-name"),
+            pytest.param("Sun 01 Nov.2026", "2026-11-01", id="toptea-weekday-no-space-after-month"),
+            pytest.param("01 Nov.2026", "2026-11-01", id="no-space-after-month-dot"),
+            pytest.param("Sunday, 1 November 2026", "2026-11-01", id="long-weekday-comma"),
+            pytest.param("Sun 01/11/2026", "2026-11-01", id="weekday-numeric"),
         ],
     )
     def test_reads_the_ways_a_date_gets_printed(self, printed: str, expected: str) -> None:
