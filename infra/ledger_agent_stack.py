@@ -39,6 +39,7 @@ class LedgerAgentStack(Stack):
         code: lambda_.Code,
         ui_origins: Sequence[str],
         smoke_test_user_id: str,
+        higher_limit_user_id: str,
         custom_domain: CustomDomain | None = None,
         **kwargs: Any,
     ) -> None:
@@ -73,6 +74,7 @@ class LedgerAgentStack(Stack):
                 "LEDGER_MCP_URL": LEDGER_MCP_URL,
                 "USAGE_TABLE": usage.table_name,
                 "SMOKE_TEST_USER_ID": smoke_test_user_id,
+                "HIGHER_LIMIT_USER_ID": higher_limit_user_id,
             },
             logging_format=lambda_.LoggingFormat.JSON,
             application_log_level_v2=lambda_.ApplicationLogLevel.INFO,

@@ -23,6 +23,7 @@ LedgerAgentStack(
     code=lambda_.Code.from_asset(str(build_lambda_package())),
     ui_origins=ui_origins,
     smoke_test_user_id=app.node.get_context("smokeTestUserId"),
+    higher_limit_user_id=app.node.get_context("higherLimitUserId"),
     custom_domain=CustomDomain(domain["domainName"], domain["zoneName"], domain["hostedZoneId"]) if domain else None,
     env=env,
 )
