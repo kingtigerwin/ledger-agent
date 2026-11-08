@@ -5,6 +5,7 @@
       "http://localhost:5173"
     ],
     "smokeTestUserId": "9ba3e7a6-d134-4346-8073-b1f3b1af0734",
+    "higherLimitUserId": "aa6e1c23-f54b-4ca2-bc10-332eb0947d2a",
     "customDomain": {
       "domainName": "agent.haoran.cloud",
       "zoneName": "haoran.cloud",

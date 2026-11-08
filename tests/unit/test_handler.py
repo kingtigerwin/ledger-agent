@@ -29,6 +29,7 @@ class Harness:
         self.tokens: list[str] = []
         self.counted: list[tuple[str, datetime]] = []
         self.allowance_left = True
+        self.message_limit = 5
         self.receipts_left = True
         self.receipts_counted: list[tuple[str, datetime]] = []
         self.total_left = True
@@ -40,7 +41,7 @@ class Harness:
 
         def count_message(user_id: str, now: datetime) -> None:
             if not self.allowance_left:
-                raise DailyLimitReached
+                raise DailyLimitReached(self.message_limit)
             if not self.total_left:
                 raise DailyTotalReached
             self.counted.append((user_id, now))
@@ -115,6 +116,16 @@ class TestGivenACustomerWhoHasUsedTodaysMessages:
     async def test_it_doesnt_call_claude(self, response: Any) -> None:
         harness, _, _ = response
         assert harness.model.requests == []
+
+
+class TestGivenTheUserWithTheHigherLimitHasUsedTodaysMessages:
+    async def test_it_tells_them_their_own_limit(self) -> None:
+        harness = Harness(FakeModel())
+        harness.allowance_left = False
+        harness.message_limit = 30
+        status, body = await harness.post()
+        assert status == 429
+        assert "30 messages" in body["error"]["message"]
 
 
 class TestGivenEveryoneHasUsedTodaysTotal:

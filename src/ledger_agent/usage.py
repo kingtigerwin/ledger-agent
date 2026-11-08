@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from mypy_boto3_dynamodb.service_resource import Table
 
 DAILY_MESSAGE_LIMIT = 5
+# For one person only, the admin sisi (`higherLimitUserId` in cdk.json).
+HIGHER_MESSAGE_LIMIT = 30
 # Separate from messages: one shop can leave several receipts, and each is a single small call.
 DAILY_RECEIPT_LIMIT = 10
 # Across everyone: anyone can join with a Google account, so this is what many accounts together run into.
@@ -26,6 +28,10 @@ _KEEP_FOR = timedelta(days=2)
 
 class DailyLimitReached(Exception):
     """The customer has used today's messages."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(limit)
+        self.limit = limit
 
 
 class DailyReceiptLimitReached(Exception):
@@ -50,18 +56,19 @@ def user_id_from(token: str) -> str:
     return subject
 
 
-def count_message(table: "Table", user_id: str, now: datetime, *, exempt: str = "") -> None:
+def count_message(table: "Table", user_id: str, now: datetime, *, exempt: str = "", higher: str = "") -> None:
     """Counts one message towards the customer's limit, then the total, or raises DailyLimitReached or
     DailyTotalReached. Each is one conditional write, so messages sent at the same moment can't get past it together.
     In that order, so a customer already past their limit can't use up the total with refused messages. `exempt` is
     the deploy smoke test's user, which sends two messages per deploy, so a third deploy in a day would otherwise fail
-    its smoke test."""
+    its smoke test. `higher` is the one user allowed HIGHER_MESSAGE_LIMIT instead."""
     if user_id == exempt:
         return
     day = today_in(RESET_ZONE, now).isoformat()
     expires = int((now + _KEEP_FOR).timestamp())
-    if not _count(table, f"USER#{user_id}#{day}", DAILY_MESSAGE_LIMIT, expires):
-        raise DailyLimitReached
+    limit = HIGHER_MESSAGE_LIMIT if higher and user_id == higher else DAILY_MESSAGE_LIMIT
+    if not _count(table, f"USER#{user_id}#{day}", limit, expires):
+        raise DailyLimitReached(limit)
     if not _count(table, f"TOTAL#{day}", DAILY_TOTAL_LIMIT, expires):
         raise DailyTotalReached
 

@@ -12,6 +12,7 @@ REGION = "ap-southeast-2"
 API_KEY_PARAMETER = "/ledger-agent/anthropic-api-key"
 LEDGER_MCP_URL = os.environ.get("LEDGER_MCP_URL", "https://api.haoran.cloud/api/mcp")
 SMOKE_TEST_USER_ID = os.environ.get("SMOKE_TEST_USER_ID", "")
+HIGHER_LIMIT_USER_ID = os.environ.get("HIGHER_LIMIT_USER_ID", "")
 
 
 def usage_table() -> "Table":

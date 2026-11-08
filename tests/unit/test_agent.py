@@ -43,7 +43,7 @@ class TestGivenATokenTheLedgerRejects:
 class TestGivenACustomerWhoIsntAdmitted:
     async def test_it_doesnt_call_claude(self) -> None:
         def refuse() -> None:
-            raise DailyLimitReached
+            raise DailyLimitReached(5)
 
         model = FakeModel()
         with pytest.raises(DailyLimitReached):

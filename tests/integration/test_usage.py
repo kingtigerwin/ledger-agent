@@ -14,6 +14,7 @@ from ledger_agent.usage import (
     DAILY_MESSAGE_LIMIT,
     DAILY_RECEIPT_LIMIT,
     DAILY_TOTAL_LIMIT,
+    HIGHER_MESSAGE_LIMIT,
     DailyLimitReached,
     DailyReceiptLimitReached,
     DailyTotalReached,
@@ -114,6 +115,28 @@ class TestGivenTheSmokeTestUser:
         use_up(table, "alice", BEFORE_MIDNIGHT)
         with pytest.raises(DailyLimitReached):
             count_message(table, "alice", BEFORE_MIDNIGHT, exempt="agent-e2e")
+
+
+class TestGivenTheUserWithTheHigherLimit:
+    def test_they_get_the_higher_limit_and_no_more(self, table: "Table") -> None:
+        for _ in range(HIGHER_MESSAGE_LIMIT):
+            count_message(table, "sisi", BEFORE_MIDNIGHT, higher="sisi")
+        with pytest.raises(DailyLimitReached) as refused:
+            count_message(table, "sisi", BEFORE_MIDNIGHT, higher="sisi")
+        assert refused.value.limit == HIGHER_MESSAGE_LIMIT
+
+    def test_their_messages_count_towards_the_total(self, table: "Table") -> None:
+        for _ in range(DAILY_MESSAGE_LIMIT + 1):
+            count_message(table, "sisi", BEFORE_MIDNIGHT, higher="sisi")
+        total = table.get_item(Key={"pk": "TOTAL#2026-10-27"}).get("Item", {})
+        assert total["messages"] == DAILY_MESSAGE_LIMIT + 1
+
+    def test_everyone_else_keeps_the_usual_limit(self, table: "Table") -> None:
+        for _ in range(DAILY_MESSAGE_LIMIT):
+            count_message(table, "alice", BEFORE_MIDNIGHT, higher="sisi")
+        with pytest.raises(DailyLimitReached) as refused:
+            count_message(table, "alice", BEFORE_MIDNIGHT, higher="sisi")
+        assert refused.value.limit == DAILY_MESSAGE_LIMIT
 
 
 class TestGivenMoreMessagesAtOnceThanAreLeft:

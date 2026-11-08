@@ -28,6 +28,7 @@ def synth(custom_domain: CustomDomain | None) -> Template:
         code=lambda_.Code.from_inline("def handler(event, context): pass"),
         ui_origins=UI_ORIGINS,
         smoke_test_user_id="agent-e2e-id",
+        higher_limit_user_id="sisi-id",
         custom_domain=custom_domain,
         env=Environment(account="123456789012", region="ap-southeast-2"),
     )
@@ -75,6 +76,7 @@ class TestTheFunction:
                         "LEDGER_MCP_URL": "https://api.haoran.cloud/api/mcp",
                         "USAGE_TABLE": Match.any_value(),
                         "SMOKE_TEST_USER_ID": "agent-e2e-id",
+                        "HIGHER_LIMIT_USER_ID": "sisi-id",
                     }
                 },
             },
