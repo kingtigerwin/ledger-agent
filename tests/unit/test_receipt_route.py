@@ -228,6 +228,18 @@ class TestGivenTheCustomerHasUsedTodaysReceipts:
         assert h.model.requests == []
 
 
+class TestGivenTheUserWithTheHigherLimitHasUsedTodaysReceipts:
+    async def test_it_tells_them_their_own_limit(self) -> None:
+        h = harness()
+        h.receipts_left = False
+        h.receipt_limit = 30
+
+        status, body = await read(h)
+
+        assert status == 429
+        assert "30 receipts" in body["error"]["message"]
+
+
 class TestGivenEveryoneHasUsedTodaysTotal:
     async def test_says_so_without_calling_claude(self) -> None:
         h = harness()

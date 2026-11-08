@@ -15,6 +15,7 @@ from ledger_agent.usage import (
     DAILY_RECEIPT_LIMIT,
     DAILY_TOTAL_LIMIT,
     HIGHER_MESSAGE_LIMIT,
+    HIGHER_RECEIPT_LIMIT,
     DailyLimitReached,
     DailyReceiptLimitReached,
     DailyTotalReached,
@@ -180,3 +181,25 @@ class TestGivenACustomerScanningReceipts:
             count_message(table, f"user-{number}", BEFORE_MIDNIGHT)
         with pytest.raises(DailyTotalReached):
             count_message(table, "erin", BEFORE_MIDNIGHT)
+
+
+class TestGivenTheUserWithTheHigherLimitScanningReceipts:
+    def test_they_get_the_higher_limit_and_no_more(self, table: "Table") -> None:
+        for _ in range(HIGHER_RECEIPT_LIMIT):
+            count_receipt(table, "sisi", BEFORE_MIDNIGHT, higher="sisi")
+        with pytest.raises(DailyReceiptLimitReached) as refused:
+            count_receipt(table, "sisi", BEFORE_MIDNIGHT, higher="sisi")
+        assert refused.value.limit == HIGHER_RECEIPT_LIMIT
+
+    def test_their_receipts_count_towards_the_total(self, table: "Table") -> None:
+        for _ in range(DAILY_RECEIPT_LIMIT + 1):
+            count_receipt(table, "sisi", BEFORE_MIDNIGHT, higher="sisi")
+        total = table.get_item(Key={"pk": "TOTAL#2026-10-27"}).get("Item", {})
+        assert total["messages"] == DAILY_RECEIPT_LIMIT + 1
+
+    def test_everyone_else_keeps_the_usual_limit(self, table: "Table") -> None:
+        for _ in range(DAILY_RECEIPT_LIMIT):
+            count_receipt(table, "alice", BEFORE_MIDNIGHT, higher="sisi")
+        with pytest.raises(DailyReceiptLimitReached) as refused:
+            count_receipt(table, "alice", BEFORE_MIDNIGHT, higher="sisi")
+        assert refused.value.limit == DAILY_RECEIPT_LIMIT

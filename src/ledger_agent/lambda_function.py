@@ -27,7 +27,9 @@ _handle = create_handler(
         count_message=lambda user_id, now: count_message(
             _usage, user_id, now, exempt=SMOKE_TEST_USER_ID, higher=HIGHER_LIMIT_USER_ID
         ),
-        count_receipt=lambda user_id, now: count_receipt(_usage, user_id, now, exempt=SMOKE_TEST_USER_ID),
+        count_receipt=lambda user_id, now: count_receipt(
+            _usage, user_id, now, exempt=SMOKE_TEST_USER_ID, higher=HIGHER_LIMIT_USER_ID
+        ),
     )
 )
 

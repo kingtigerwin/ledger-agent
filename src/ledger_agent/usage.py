@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 DAILY_MESSAGE_LIMIT = 5
 # For one person only, the admin sisi (`higherLimitUserId` in cdk.json).
 HIGHER_MESSAGE_LIMIT = 30
+HIGHER_RECEIPT_LIMIT = 30
 # Separate from messages: one shop can leave several receipts, and each is a single small call.
 DAILY_RECEIPT_LIMIT = 10
 # Across everyone: anyone can join with a Google account, so this is what many accounts together run into.
@@ -36,6 +37,10 @@ class DailyLimitReached(Exception):
 
 class DailyReceiptLimitReached(Exception):
     """The customer has used today's receipts."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(limit)
+        self.limit = limit
 
 
 class DailyTotalReached(Exception):
@@ -73,14 +78,16 @@ def count_message(table: "Table", user_id: str, now: datetime, *, exempt: str = 
         raise DailyTotalReached
 
 
-def count_receipt(table: "Table", user_id: str, now: datetime, *, exempt: str = "") -> None:
-    """As count_message, for a photo of a receipt: its own allowance, and the same total for everyone."""
+def count_receipt(table: "Table", user_id: str, now: datetime, *, exempt: str = "", higher: str = "") -> None:
+    """As count_message, for a photo of a receipt: its own allowance, and the same total for everyone. `higher` is
+    the one user allowed HIGHER_RECEIPT_LIMIT instead."""
     if user_id == exempt:
         return
     day = today_in(RESET_ZONE, now).isoformat()
     expires = int((now + _KEEP_FOR).timestamp())
-    if not _count(table, f"USER#{user_id}#RECEIPTS#{day}", DAILY_RECEIPT_LIMIT, expires):
-        raise DailyReceiptLimitReached
+    limit = HIGHER_RECEIPT_LIMIT if higher and user_id == higher else DAILY_RECEIPT_LIMIT
+    if not _count(table, f"USER#{user_id}#RECEIPTS#{day}", limit, expires):
+        raise DailyReceiptLimitReached(limit)
     if not _count(table, f"TOTAL#{day}", DAILY_TOTAL_LIMIT, expires):
         raise DailyTotalReached
 
