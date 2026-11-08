@@ -31,6 +31,7 @@ class Harness:
         self.allowance_left = True
         self.message_limit = 5
         self.receipts_left = True
+        self.receipt_limit = 10
         self.receipts_counted: list[tuple[str, datetime]] = []
         self.total_left = True
 
@@ -48,7 +49,7 @@ class Harness:
 
         def count_receipt(user_id: str, now: datetime) -> None:
             if not self.receipts_left:
-                raise DailyReceiptLimitReached
+                raise DailyReceiptLimitReached(self.receipt_limit)
             if not self.total_left:
                 raise DailyTotalReached
             self.receipts_counted.append((user_id, now))

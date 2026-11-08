@@ -17,7 +17,6 @@ from .clock import InvalidTimeZone, today_in
 from .ledger import Ledger, LedgerUnavailable, Unauthorized
 from .receipts import MAX_PDF_PAGES, MediaType, ReceiptNotRead, bill_from, check_pdf, check_receipt, read_receipt
 from .usage import (
-    DAILY_RECEIPT_LIMIT,
     DailyLimitReached,
     DailyReceiptLimitReached,
     DailyTotalReached,
@@ -177,11 +176,9 @@ def create_handler(deps: Deps) -> Callable[[Event], Awaitable[Response]]:
             log.info("daily_limit_reached")
             message = f"You've used today's {err.limit} messages. You can send more after midnight Sydney time."
             return _error(429, "daily_limit_reached", message)
-        except DailyReceiptLimitReached:
+        except DailyReceiptLimitReached as err:
             log.info("daily_receipt_limit_reached")
-            message = (
-                f"You've scanned today's {DAILY_RECEIPT_LIMIT} receipts. You can scan more after midnight Sydney time."
-            )
+            message = f"You've scanned today's {err.limit} receipts. You can scan more after midnight Sydney time."
             return _error(429, "daily_receipt_limit_reached", message)
         except DailyTotalReached:
             log.warning("daily_total_reached")
